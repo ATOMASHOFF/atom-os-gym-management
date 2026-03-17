@@ -1,6 +1,17 @@
 'use strict';
 require('dotenv').config();
 
+
+// Auto-run migrations on startup
+const { execSync } = require('child_process');
+try {
+  console.log('Running migrations...');
+  execSync('node scripts/migrate.js', { stdio: 'inherit' });
+  console.log('Migrations complete');
+} catch (err) {
+  console.error('Migration error:', err.message);
+}
+
 // Must validate env before anything else
 const { validateEnv } = require('./config/env');
 validateEnv();
