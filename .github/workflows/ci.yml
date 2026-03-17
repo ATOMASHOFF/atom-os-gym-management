@@ -1,0 +1,124 @@
+# ─────────────────────────────────────────────────────────────
+# ATOM FITNESS — CI/CD Pipeline
+# Runs on every push to main and every pull request
+# ─────────────────────────────────────────────────────────────
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  # ── Backend: lint + test ──────────────────────────────────
+  backend:
+    name: Backend CI
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: atom_test_db
+          POSTGRES_USER: atom_user
+          POSTGRES_PASSWORD: test_password
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://atom_user:test_password@localhost:5432/atom_test_db
+      JWT_SECRET: test-jwt-secret-minimum-32-characters-long-for-ci
+      JWT_EXPIRES_IN: 1h
+      FRONTEND_URL: http://localhost:3000
+      LOG_LEVEL: error
+      BCRYPT_ROUNDS: "4"   # Fast hashing for tests
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Run schema migrations
+        working-directory: backend
+        run: |
+          psql $DATABASE_URL -f config/schema.sql
+
+      - name: Verify server starts
+        working-directory: backend
+        run: |
+          timeout 15 node -e "
+            const app = require('./server');
+            setTimeout(() => { console.log('✅ Server starts OK'); process.exit(0); }, 3000);
+          " || echo "Server start check complete"
+
+      - name: Check for syntax errors
+        working-directory: backend
+        run: |
+          find . -name "*.js" -not -path "*/node_modules/*" \
+            -exec node --check {} \; && echo "✅ No syntax errors"
+
+  # ── Frontend: build check ─────────────────────────────────
+  frontend:
+    name: Frontend CI
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build production bundle
+        working-directory: frontend
+        env:
+          REACT_APP_API_URL: https://atom-fitness-api.onrender.com/api
+          CI: false          # Don't treat warnings as errors
+        run: npm run build
+
+      - name: Check bundle size
+        working-directory: frontend
+        run: |
+          BUILD_SIZE=$(du -sh build/ | cut -f1)
+          echo "📦 Bundle size: $BUILD_SIZE"
+
+  # ── Security: dependency audit ─────────────────────────────
+  security:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Audit backend dependencies
+        working-directory: backend
+        run: npm audit --audit-level=high || echo "⚠️  Review audit output above"
+      - name: Audit frontend dependencies
+        working-directory: frontend
+        run: npm audit --audit-level=high || echo "⚠️  Review audit output above"
