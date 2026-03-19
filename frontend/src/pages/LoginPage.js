@@ -8,16 +8,16 @@ import api, { extractGyms } from '../utils/api';
 
 export default function LoginPage() {
   const { login, user } = useAuth();
-  const toast = useToast();
-  const navigate = useNavigate();
+  const toast           = useToast();
+  const navigate        = useNavigate();
 
-  const [form, setForm]         = useState({ email: '', password: '' });
-  const [gymId, setGymId]       = useState('');
-  const [gyms, setGyms]         = useState([]);
+  const [form, setForm]               = useState({ email: '', password: '' });
+  const [gymId, setGymId]             = useState('');
+  const [gyms, setGyms]               = useState([]);
   const [gymsLoading, setGymsLoading] = useState(true);
   const [gymsError, setGymsError]     = useState('');
-  const [loading, setLoading]   = useState(false);
-  const [focused, setFocused]   = useState(null);
+  const [loading, setLoading]         = useState(false);
+  const [focused, setFocused]         = useState(null);
 
   const fetchGyms = () => {
     setGymsLoading(true);
@@ -26,11 +26,11 @@ export default function LoginPage() {
       .then(r => {
         const list = extractGyms(r.data);
         setGyms(list);
-        if (list.length === 1) setGymId(String(list[0].id));
+        // Always auto-select first gym (Atom OS is always gym #1)
+        if (list.length >= 1) setGymId(String(list[0].id));
       })
       .catch(err => {
-        const msg = err?.response?.data?.message || err?.message || 'Could not load gym list';
-        setGymsError(msg);
+        setGymsError(err?.response?.data?.message || err?.message || 'Could not load gym list');
       })
       .finally(() => setGymsLoading(false));
   };
@@ -44,36 +44,29 @@ export default function LoginPage() {
   const handle = async e => {
     e.preventDefault();
     if (!form.email || !form.password) {
-      toast('Enter your email and password', 'error');
-      return;
+      toast('Enter your email and password', 'error'); return;
     }
-    if (gyms.length > 1 && !gymId) {
-      toast('Please select your gym', 'error');
-      return;
-    }
+    // Super admins don't need a gym — they have no gym_id
+    // For all other users, gym is required
     setLoading(true);
     try {
       const usr = await login(form.email, form.password, gymId || undefined);
-      toast(`Welcome, ${usr.name}!`, 'success');
+      toast(`Welcome back, ${usr.name}!`, 'success');
       navigate('/');
     } catch (err) {
-      const msg = err?.response?.data?.message || err?.message || 'Invalid credentials';
-      toast(msg, 'error');
+      toast(err?.response?.data?.message || err?.message || 'Invalid credentials', 'error');
     } finally {
       setLoading(false);
     }
   };
 
-  const inp = (field) => ({
+  const inp = field => ({
     width: '100%', background: T.bg0,
     border: `1.5px solid ${focused === field ? T.accent : T.border}`,
     borderRadius: 5, padding: '11px 14px', color: T.white,
-    fontSize: 14, fontFamily: T.font,
-    outline: 'none', transition: 'border-color 0.15s',
+    fontSize: 14, fontFamily: T.font, outline: 'none',
+    transition: 'border-color 0.15s',
   });
-
-  const showSelector = !gymsLoading && !gymsError && gyms.length > 1;
-  const singleGym   = !gymsLoading && !gymsError && gyms.length === 1;
 
   return (
     <div style={{ minHeight: '100vh', background: T.bg0, display: 'flex', alignItems: 'stretch' }}>
@@ -83,8 +76,8 @@ export default function LoginPage() {
         flex: '0 0 420px',
         background: 'linear-gradient(160deg, #0d0f1a 0%, #1a0800 100%)',
         borderRight: `1px solid ${T.border}`,
-        display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
-        padding: '48px 40px',
+        display: 'flex', flexDirection: 'column',
+        justifyContent: 'space-between', padding: '48px 40px',
       }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 48 }}>
@@ -101,9 +94,9 @@ export default function LoginPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             {[
               ['📋', 'Member Management', 'Profiles, subscriptions & history'],
-              ['📱', 'QR Attendance',     'Scan-based check-ins'],
-              ['📊', 'Live Dashboard',    'Real-time stats & alerts'],
-              ['📥', 'Bulk Import',       'Upload members from Excel/CSV'],
+              ['📱', 'QR Attendance',     'Scan-based check-ins, no manual tracking'],
+              ['📊', 'Live Dashboard',    'Real-time stats, expiry alerts, revenue'],
+              ['📥', 'Bulk Import',       'Upload existing members from Excel/CSV'],
             ].map(([icon, title, desc]) => (
               <div key={title} style={{ display: 'flex', gap: 14 }}>
                 <div style={{
@@ -149,69 +142,74 @@ export default function LoginPage() {
 
           <form onSubmit={handle}>
 
-            {/* Loading state */}
-            {gymsLoading && (
-              <div style={{
-                marginBottom: 16, padding: '11px 14px',
-                background: T.bg2, border: `1px solid ${T.border}`,
-                borderRadius: 5, display: 'flex', alignItems: 'center', gap: 8,
-                color: T.muted, fontSize: 13,
-              }}>
-                <Spinner size={13} /> Loading gyms...
-              </div>
-            )}
+            {/* ── Gym selector ── */}
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 12, color: T.sub, fontWeight: 500, marginBottom: 6 }}>
+                Gym
+              </label>
 
-            {/* Error state */}
-            {gymsError && (
-              <div style={{
-                marginBottom: 16, padding: '10px 14px',
-                background: T.redDim, border: `1px solid ${T.red}44`,
-                borderRadius: 5, fontSize: 12, color: T.red,
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              }}>
-                <span>⚠ {gymsError}</span>
-                <button type="button" onClick={fetchGyms} style={{
-                  background: 'transparent', color: T.red,
-                  border: `1px solid ${T.red}66`, padding: '3px 10px',
-                  borderRadius: 3, fontSize: 11, fontFamily: T.display,
-                  fontWeight: 700, cursor: 'pointer', letterSpacing: '0.06em',
-                  textTransform: 'uppercase',
-                }}>Retry</button>
-              </div>
-            )}
+              {gymsLoading && (
+                <div style={{
+                  ...inp('gym'), display: 'flex', alignItems: 'center', gap: 8, color: T.muted,
+                }}>
+                  <Spinner size={13} /> Loading...
+                </div>
+              )}
 
-            {/* Multiple gyms — show dropdown */}
-            {showSelector && (
-              <div style={{ marginBottom: 16 }}>
-                <label style={{ display: 'block', fontSize: 12, color: T.sub, fontWeight: 500, marginBottom: 6 }}>
-                  Select Gym <span style={{ color: T.red }}>*</span>
-                </label>
+              {gymsError && !gymsLoading && (
+                <div style={{
+                  padding: '10px 14px', background: T.redDim,
+                  border: `1px solid ${T.red}44`, borderRadius: 5,
+                  fontSize: 12, color: T.red,
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                }}>
+                  <span>⚠ {gymsError}</span>
+                  <button type="button" onClick={fetchGyms} style={{
+                    background: 'transparent', color: T.red, border: `1px solid ${T.red}44`,
+                    padding: '2px 10px', borderRadius: 3, fontSize: 11,
+                    fontFamily: T.display, fontWeight: 700, cursor: 'pointer',
+                    letterSpacing: '0.06em', textTransform: 'uppercase',
+                  }}>Retry</button>
+                </div>
+              )}
+
+              {!gymsLoading && !gymsError && gyms.length === 0 && (
+                <div style={{
+                  padding: '10px 14px', background: T.amberDim,
+                  border: `1px solid ${T.amber}44`, borderRadius: 5,
+                  fontSize: 12, color: T.amber,
+                }}>
+                  No gyms available. Contact your administrator.
+                </div>
+              )}
+
+              {/* Show dropdown only if multiple gyms */}
+              {!gymsLoading && !gymsError && gyms.length > 1 && (
                 <select value={gymId} onChange={e => setGymId(e.target.value)}
                   style={{ ...inp('gym'), cursor: 'pointer' }}>
-                  <option value="">— Select your gym —</option>
                   {gyms.map(g => (
                     <option key={g.id} value={String(g.id)}>{g.name}</option>
                   ))}
                 </select>
-              </div>
-            )}
+              )}
 
-            {/* Single gym — show as info banner */}
-            {singleGym && (
-              <div style={{
-                marginBottom: 16, padding: '10px 14px',
-                background: T.bg2, border: `1px solid ${T.border}`,
-                borderRadius: 5, display: 'flex', alignItems: 'center', gap: 10,
-              }}>
-                <div style={{ width: 8, height: 8, borderRadius: '50%', background: T.green, flexShrink: 0 }} />
-                <div>
-                  <div style={{ fontSize: 10, color: T.muted, fontFamily: T.mono, letterSpacing: '0.08em' }}>SIGNING INTO</div>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{gyms[0]?.name}</div>
+              {/* Single gym — show as green badge (no action needed) */}
+              {!gymsLoading && !gymsError && gyms.length === 1 && (
+                <div style={{
+                  padding: '10px 14px', background: T.bg2,
+                  border: `1.5px solid ${T.green}55`, borderRadius: 5,
+                  display: 'flex', alignItems: 'center', gap: 10,
+                }}>
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: T.green, flexShrink: 0 }} />
+                  <div>
+                    <div style={{ fontSize: 10, color: T.muted, fontFamily: T.mono, letterSpacing: '0.08em' }}>SIGNING INTO</div>
+                    <div style={{ fontSize: 14, fontWeight: 700 }}>{gyms[0]?.name}</div>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
 
-            {/* Email */}
+            {/* ── Email ── */}
             <div style={{ marginBottom: 16 }}>
               <label style={{ display: 'block', fontSize: 12, color: T.sub, fontWeight: 500, marginBottom: 6 }}>
                 Email address
@@ -225,7 +223,7 @@ export default function LoginPage() {
               />
             </div>
 
-            {/* Password */}
+            {/* ── Password ── */}
             <div style={{ marginBottom: 24 }}>
               <label style={{ display: 'block', fontSize: 12, color: T.sub, fontWeight: 500, marginBottom: 6 }}>
                 Password
@@ -239,13 +237,12 @@ export default function LoginPage() {
               />
             </div>
 
-            <button type="submit" disabled={loading || gymsLoading} style={{
-              width: '100%',
-              background: loading || gymsLoading ? T.bg3 : T.accent,
+            <button type="submit" disabled={loading} style={{
+              width: '100%', background: loading ? T.bg3 : T.accent,
               color: '#fff', border: 'none', padding: '12px', borderRadius: 5,
               fontFamily: T.display, fontWeight: 800, fontSize: 14,
               letterSpacing: '0.06em', textTransform: 'uppercase',
-              cursor: loading || gymsLoading ? 'not-allowed' : 'pointer',
+              cursor: loading ? 'not-allowed' : 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
               transition: 'background 0.15s',
             }}>
