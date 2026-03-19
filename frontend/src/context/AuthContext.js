@@ -18,9 +18,14 @@ export const AuthProvider = ({ children }) => {
   const fetchMe = useCallback(async () => {
     try {
       const res = await api.get('/auth/me');
-      setUser(res.data);
-    } catch { logout(); }
-    finally { setLoading(false); }
+      // Handle both { success, data: user } and direct user object
+      const userData = res.data?.data || res.data;
+      setUser(userData);
+    } catch {
+      logout();
+    } finally {
+      setLoading(false);
+    }
   }, [logout]);
 
   useEffect(() => {
@@ -29,8 +34,17 @@ export const AuthProvider = ({ children }) => {
   }, [token, fetchMe]);
 
   const login = async (email, password, gym_id) => {
-    const res = await api.post('/auth/login', { email, password, gym_id });
+    const res = await api.post('/auth/login', {
+      email,
+      password,
+      ...(gym_id ? { gym_id } : {}),
+    });
+
+    // Backend returns: { success: true, token: "...", user: {...} }
     const { token: tok, user: usr } = res.data;
+
+    if (!tok) throw new Error('No token received from server');
+
     localStorage.setItem('atom_token', tok);
     setToken(tok);
     setUser(usr);
@@ -45,16 +59,14 @@ export const AuthProvider = ({ children }) => {
     return user.permissions?.[permission] === true;
   };
 
-  const isSuperAdmin = user?.role === 'super_admin';
-  const isAdmin      = user?.role === 'admin';
-  const isStaff      = user?.role === 'staff';
-  const isMember     = user?.role === 'member';
-
   return (
     <AuthContext.Provider value={{
       user, token, loading,
       login, logout, refreshUser, can,
-      isSuperAdmin, isAdmin, isStaff, isMember,
+      isSuperAdmin: user?.role === 'super_admin',
+      isAdmin:      user?.role === 'admin',
+      isStaff:      user?.role === 'staff',
+      isMember:     user?.role === 'member',
     }}>
       {children}
     </AuthContext.Provider>

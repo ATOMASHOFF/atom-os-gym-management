@@ -8,7 +8,7 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-// ── Request interceptor — attach token ───────────────────────
+// ── Request interceptor ───────────────────────────────────────
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('atom_token');
@@ -18,17 +18,16 @@ api.interceptors.request.use(
   (err) => Promise.reject(err)
 );
 
-// ── Response interceptor — normalize + auto-retry ────────────
+// ── Response interceptor ──────────────────────────────────────
+// IMPORTANT: We do NOT auto-unwrap responses here anymore.
+// Each page reads r.data and handles the shape itself.
+// Reason: login returns { success, token, user } — no "data" key.
+// Unwrapping that breaks token extraction in AuthContext.
+
 let isRedirecting = false;
 
 api.interceptors.response.use(
-  // Normalize: unwrap { success, data } envelope
-  (res) => {
-    if (res.data?.success !== undefined && res.data?.data !== undefined) {
-      res.data = res.data.data;
-    }
-    return res;
-  },
+  (res) => res,  // pass through unchanged
   async (err) => {
     const config = err.config;
 
@@ -40,11 +39,11 @@ api.interceptors.response.use(
       return Promise.reject(err);
     }
 
-    // Retry once on network errors or 5xx (but not on 4xx client errors)
+    // Retry once on network errors or 5xx GET requests
     const shouldRetry =
       !config._retried &&
       (!err.response || err.response.status >= 500) &&
-      config.method?.toLowerCase() === 'get'; // Only retry GETs safely
+      config.method?.toLowerCase() === 'get';
 
     if (shouldRetry) {
       config._retried = true;
@@ -56,7 +55,16 @@ api.interceptors.response.use(
   }
 );
 
-// Helper to extract error message from any error shape
+// Helper: safely extract gym list from any response shape
+export const extractGyms = (data) => {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.gyms)) return data.gyms;
+  if (Array.isArray(data?.data?.gyms)) return data.data.gyms;
+  if (Array.isArray(data?.data)) return data.data;
+  return [];
+};
+
+// Helper: extract error message
 export const getErrorMessage = (err, fallback = 'An error occurred') => {
   return (
     err?.response?.data?.message ||

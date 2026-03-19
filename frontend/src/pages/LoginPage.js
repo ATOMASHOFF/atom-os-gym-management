@@ -4,44 +4,38 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { T } from '../utils/helpers';
 import { Spinner } from '../components/shared/UI';
-import api from '../utils/api';
+import api, { extractGyms } from '../utils/api';
 
 export default function LoginPage() {
   const { login, user } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
-  const [form, setForm] = useState({ email: '', password: '' });
-  const [gymId, setGymId] = useState('');
-  const [gyms, setGyms] = useState([]);
-  const [gymsLoading, setGymsLoading] = useState(true);  // FIX 3: track loading state
-  const [gymsError, setGymsError] = useState(false);     // FIX 2: track errors
-  const [loading, setLoading] = useState(false);
-  const [focused, setFocused] = useState(null);
 
-  useEffect(() => {
+  const [form, setForm]         = useState({ email: '', password: '' });
+  const [gymId, setGymId]       = useState('');
+  const [gyms, setGyms]         = useState([]);
+  const [gymsLoading, setGymsLoading] = useState(true);
+  const [gymsError, setGymsError]     = useState('');
+  const [loading, setLoading]   = useState(false);
+  const [focused, setFocused]   = useState(null);
+
+  const fetchGyms = () => {
     setGymsLoading(true);
-    setGymsError(false);
+    setGymsError('');
     api.get('/public/gyms')
       .then(r => {
-        // FIX 4: handle all possible response shapes
-        const list =
-          r.data?.gyms ||          // { gyms: [...] }
-          r.data?.data?.gyms ||    // { data: { gyms: [...] } }
-          (Array.isArray(r.data) ? r.data : []);  // direct array
-
+        const list = extractGyms(r.data);
         setGyms(list);
-
-        // Auto-select only if exactly 1 gym
-        if (list.length === 1) {
-          setGymId(String(list[0].id));
-        }
+        if (list.length === 1) setGymId(String(list[0].id));
       })
-      .catch(() => {
-        // FIX 2: don't silently swallow — show retry option
-        setGymsError(true);
+      .catch(err => {
+        const msg = err?.response?.data?.message || err?.message || 'Could not load gym list';
+        setGymsError(msg);
       })
       .finally(() => setGymsLoading(false));
-  }, []);
+  };
+
+  useEffect(() => { fetchGyms(); }, []);
 
   if (user) return <Navigate to="/" replace />;
 
@@ -53,7 +47,6 @@ export default function LoginPage() {
       toast('Enter your email and password', 'error');
       return;
     }
-    // FIX 1: if multiple gyms and none selected, warn user
     if (gyms.length > 1 && !gymId) {
       toast('Please select your gym', 'error');
       return;
@@ -64,13 +57,14 @@ export default function LoginPage() {
       toast(`Welcome, ${usr.name}!`, 'success');
       navigate('/');
     } catch (err) {
-      toast(err.response?.data?.message || 'Invalid email or password', 'error');
+      const msg = err?.response?.data?.message || err?.message || 'Invalid credentials';
+      toast(msg, 'error');
     } finally {
       setLoading(false);
     }
   };
 
-  const inputStyle = (field) => ({
+  const inp = (field) => ({
     width: '100%', background: T.bg0,
     border: `1.5px solid ${focused === field ? T.accent : T.border}`,
     borderRadius: 5, padding: '11px 14px', color: T.white,
@@ -78,18 +72,16 @@ export default function LoginPage() {
     outline: 'none', transition: 'border-color 0.15s',
   });
 
-  // FIX 1: show selector when 1+ gyms, not just when > 1
-  // Super admins don't need to select a gym — they have no gym_id
-  const showGymSelector = !gymsLoading && !gymsError && gyms.length > 1;
-  const singleGym = !gymsLoading && !gymsError && gyms.length === 1;
+  const showSelector = !gymsLoading && !gymsError && gyms.length > 1;
+  const singleGym   = !gymsLoading && !gymsError && gyms.length === 1;
 
   return (
     <div style={{ minHeight: '100vh', background: T.bg0, display: 'flex', alignItems: 'stretch' }}>
 
-      {/* Left branding panel */}
+      {/* ── Left branding ── */}
       <div className="login-brand" style={{
         flex: '0 0 420px',
-        background: `linear-gradient(160deg, #0d0f1a 0%, #1a0800 100%)`,
+        background: 'linear-gradient(160deg, #0d0f1a 0%, #1a0800 100%)',
         borderRight: `1px solid ${T.border}`,
         display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
         padding: '48px 40px',
@@ -108,10 +100,10 @@ export default function LoginPage() {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             {[
-              ['📋', 'Member Management', 'Complete profiles, subscriptions & history'],
-              ['📱', 'QR Attendance',      'Scan-based check-ins, no manual tracking'],
-              ['📊', 'Live Dashboard',     'Real-time stats, expiry alerts, revenue'],
-              ['📥', 'Bulk Import',        'Upload existing members from Excel/CSV'],
+              ['📋', 'Member Management', 'Profiles, subscriptions & history'],
+              ['📱', 'QR Attendance',     'Scan-based check-ins'],
+              ['📊', 'Live Dashboard',    'Real-time stats & alerts'],
+              ['📥', 'Bulk Import',       'Upload members from Excel/CSV'],
             ].map(([icon, title, desc]) => (
               <div key={title} style={{ display: 'flex', gap: 14 }}>
                 <div style={{
@@ -133,7 +125,7 @@ export default function LoginPage() {
         </div>
       </div>
 
-      {/* Right login form */}
+      {/* ── Right form ── */}
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 24px' }}>
         <div className="fadeUp" style={{ width: '100%', maxWidth: 400 }}>
 
@@ -157,21 +149,19 @@ export default function LoginPage() {
 
           <form onSubmit={handle}>
 
-            {/* Loading gyms skeleton */}
+            {/* Loading state */}
             {gymsLoading && (
-              <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 12, color: T.sub, fontWeight: 500, marginBottom: 6 }}>Select Gym</div>
-                <div style={{
-                  ...inputStyle('gym'),
-                  display: 'flex', alignItems: 'center', gap: 8,
-                  color: T.muted,
-                }}>
-                  <Spinner size={13} /> Loading gyms...
-                </div>
+              <div style={{
+                marginBottom: 16, padding: '11px 14px',
+                background: T.bg2, border: `1px solid ${T.border}`,
+                borderRadius: 5, display: 'flex', alignItems: 'center', gap: 8,
+                color: T.muted, fontSize: 13,
+              }}>
+                <Spinner size={13} /> Loading gyms...
               </div>
             )}
 
-            {/* Error fetching gyms */}
+            {/* Error state */}
             {gymsError && (
               <div style={{
                 marginBottom: 16, padding: '10px 14px',
@@ -179,42 +169,25 @@ export default function LoginPage() {
                 borderRadius: 5, fontSize: 12, color: T.red,
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center',
               }}>
-                <span>Could not load gym list</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setGymsError(false);
-                    setGymsLoading(true);
-                    api.get('/public/gyms')
-                      .then(r => {
-                        const list = r.data?.gyms || r.data?.data?.gyms || (Array.isArray(r.data) ? r.data : []);
-                        setGyms(list);
-                        if (list.length === 1) setGymId(String(list[0].id));
-                      })
-                      .catch(() => setGymsError(true))
-                      .finally(() => setGymsLoading(false));
-                  }}
-                  style={{
-                    background: 'transparent', color: T.red, border: `1px solid ${T.red}44`,
-                    padding: '3px 10px', borderRadius: 3, fontSize: 11,
-                    fontFamily: T.display, fontWeight: 700, cursor: 'pointer',
-                    letterSpacing: '0.06em', textTransform: 'uppercase',
-                  }}
-                >Retry</button>
+                <span>⚠ {gymsError}</span>
+                <button type="button" onClick={fetchGyms} style={{
+                  background: 'transparent', color: T.red,
+                  border: `1px solid ${T.red}66`, padding: '3px 10px',
+                  borderRadius: 3, fontSize: 11, fontFamily: T.display,
+                  fontWeight: 700, cursor: 'pointer', letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
+                }}>Retry</button>
               </div>
             )}
 
-            {/* Gym selector — multiple gyms */}
-            {showGymSelector && (
+            {/* Multiple gyms — show dropdown */}
+            {showSelector && (
               <div style={{ marginBottom: 16 }}>
                 <label style={{ display: 'block', fontSize: 12, color: T.sub, fontWeight: 500, marginBottom: 6 }}>
                   Select Gym <span style={{ color: T.red }}>*</span>
                 </label>
-                <select
-                  value={gymId}
-                  onChange={e => setGymId(e.target.value)}
-                  style={{ ...inputStyle('gym'), cursor: 'pointer' }}
-                >
+                <select value={gymId} onChange={e => setGymId(e.target.value)}
+                  style={{ ...inp('gym'), cursor: 'pointer' }}>
                   <option value="">— Select your gym —</option>
                   {gyms.map(g => (
                     <option key={g.id} value={String(g.id)}>{g.name}</option>
@@ -223,20 +196,17 @@ export default function LoginPage() {
               </div>
             )}
 
-            {/* Single gym — show as info, not a selector */}
+            {/* Single gym — show as info banner */}
             {singleGym && (
               <div style={{
                 marginBottom: 16, padding: '10px 14px',
                 background: T.bg2, border: `1px solid ${T.border}`,
-                borderRadius: 5, display: 'flex', alignItems: 'center', gap: 8,
+                borderRadius: 5, display: 'flex', alignItems: 'center', gap: 10,
               }}>
-                <div style={{
-                  width: 8, height: 8, borderRadius: '50%',
-                  background: T.green, flexShrink: 0,
-                }} />
+                <div style={{ width: 8, height: 8, borderRadius: '50%', background: T.green, flexShrink: 0 }} />
                 <div>
-                  <div style={{ fontSize: 11, color: T.muted, fontFamily: T.mono, letterSpacing: '0.08em' }}>SIGNING INTO</div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: T.white }}>{gyms[0]?.name}</div>
+                  <div style={{ fontSize: 10, color: T.muted, fontFamily: T.mono, letterSpacing: '0.08em' }}>SIGNING INTO</div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{gyms[0]?.name}</div>
                 </div>
               </div>
             )}
@@ -247,15 +217,11 @@ export default function LoginPage() {
                 Email address
               </label>
               <input
-                type="email"
-                value={form.email}
-                onChange={f('email')}
-                placeholder="admin@yourgym.com"
-                autoComplete="email"
-                autoFocus
-                onFocus={() => setFocused('email')}
-                onBlur={() => setFocused(null)}
-                style={inputStyle('email')}
+                type="email" value={form.email} onChange={f('email')}
+                placeholder="you@example.com"
+                autoComplete="email" autoFocus
+                onFocus={() => setFocused('email')} onBlur={() => setFocused(null)}
+                style={inp('email')}
               />
             </div>
 
@@ -265,31 +231,24 @@ export default function LoginPage() {
                 Password
               </label>
               <input
-                type="password"
-                value={form.password}
-                onChange={f('password')}
+                type="password" value={form.password} onChange={f('password')}
                 placeholder="Your password"
                 autoComplete="current-password"
-                onFocus={() => setFocused('password')}
-                onBlur={() => setFocused(null)}
-                style={inputStyle('password')}
+                onFocus={() => setFocused('password')} onBlur={() => setFocused(null)}
+                style={inp('password')}
               />
             </div>
 
-            <button
-              type="submit"
-              disabled={loading || gymsLoading}
-              style={{
-                width: '100%',
-                background: loading || gymsLoading ? T.bg3 : T.accent,
-                color: '#fff', border: 'none', padding: '12px',
-                borderRadius: 5, fontFamily: T.display, fontWeight: 800,
-                fontSize: 14, letterSpacing: '0.06em', textTransform: 'uppercase',
-                cursor: loading || gymsLoading ? 'not-allowed' : 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                transition: 'background 0.15s',
-              }}
-            >
+            <button type="submit" disabled={loading || gymsLoading} style={{
+              width: '100%',
+              background: loading || gymsLoading ? T.bg3 : T.accent,
+              color: '#fff', border: 'none', padding: '12px', borderRadius: 5,
+              fontFamily: T.display, fontWeight: 800, fontSize: 14,
+              letterSpacing: '0.06em', textTransform: 'uppercase',
+              cursor: loading || gymsLoading ? 'not-allowed' : 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              transition: 'background 0.15s',
+            }}>
               {loading ? <><Spinner size={14} /> Signing in...</> : 'Sign In →'}
             </button>
           </form>
@@ -307,12 +266,8 @@ export default function LoginPage() {
       </div>
 
       <style>{`
-        @media (max-width: 768px) {
-          .login-brand { display: none !important; }
-        }
-        @media (min-width: 769px) {
-          .login-mobile-logo { display: none !important; }
-        }
+        @media (max-width: 768px) { .login-brand { display: none !important; } }
+        @media (min-width: 769px) { .login-mobile-logo { display: none !important; } }
       `}</style>
     </div>
   );
