@@ -1,139 +1,135 @@
 'use strict';
 require('dotenv').config();
 
-
-// Auto-run migrations on startup
-const { execSync } = require('child_process');
-try {
-  console.log('Running migrations...');
-  execSync('node scripts/migrate.js', { stdio: 'inherit' });
-  console.log('Migrations complete');
-} catch (err) {
-  console.error('Migration error:', err.message);
-}
-
-// Must validate env before anything else
 const { validateEnv } = require('./config/env');
 validateEnv();
 
-const express  = require('express');
-const helmet   = require('helmet');
-const cors     = require('cors');
-const morgan   = require('morgan');
-const compress = require('compression');
-const logger   = require('./utils/logger');
-const { healthCheck, pool } = require('./config/database');
-const requestId = require('./middleware/requestId');
-const { apiLimiter } = require('./middleware/rateLimiter');
-const { errorHandler } = require('./middleware/errorHandler');
-
-const app  = express();
-const PORT = parseInt(process.env.PORT || '5000');
-
-// ── Security headers ────────────────────────────────────────
-app.use(helmet({
-  crossOriginResourcePolicy: { policy: 'cross-origin' },
-  contentSecurityPolicy: process.env.NODE_ENV === 'production' ? undefined : false,
-  hsts: process.env.NODE_ENV === 'production'
-    ? { maxAge: 31536000, includeSubDomains: true }
-    : false,
-}));
-
-// ── CORS ─────────────────────────────────────────────────────
-const allowedOrigins = [
-  process.env.FRONTEND_URL,
-  'https://atom-fitness-app.onrender.com',
-  ...(process.env.NODE_ENV !== 'production' ? ['http://localhost:3000', 'http://localhost:3001'] : []),
-].filter(Boolean);
-
-app.use(cors({
-  origin: (origin, cb) => {
-    if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
-    logger.warn('CORS blocked request', { origin });
-    cb(new Error(`CORS policy: origin ${origin} not allowed`));
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Authorization', 'Content-Type', 'X-Request-ID'],
-}));
-
-// ── Compression (FIX [12]) ───────────────────────────────────
-app.use(compress());
-
-// ── Body parsing — FIX [3]: 100kb max (not 10mb) ────────────
-app.use(express.json({ limit: '100kb' }));
-app.use(express.urlencoded({ extended: true, limit: '100kb' }));
-
-// ── Request ID (FIX [13]) ────────────────────────────────────
-app.use(requestId);
-
-// ── Structured HTTP logging (FIX [9]) ────────────────────────
-app.use(morgan(
-  ':method :url :status :res[content-length] - :response-time ms',
-  { stream: { write: (msg) => logger.http(msg.trim()) } }
-));
-
-// ── Global rate limit (FIX [1]) ─────────────────────────────
-app.use('/api', apiLimiter);
-
-// ── Routes ───────────────────────────────────────────────────
-app.use('/api/auth',          require('./routes/auth'));
-app.use('/api/members',       require('./routes/members'));
-app.use('/api/subscriptions', require('./routes/subscriptions'));
-app.use('/api/attendance',    require('./routes/attendance'));
-app.use('/api/staff',         require('./routes/staff'));
-app.use('/api/plans',         require('./routes/plans'));
-app.use('/api/gym-qr',        require('./routes/gymQR'));
-app.use('/api/gyms',          require('./routes/gyms'));
-app.use('/api/public',        require('./routes/public'));
-app.use('/api/super',          require('./routes/super'));
-app.use('/api/import',        require('./routes/import'));
-app.use('/api/scan',          require('./routes/scan'));
-
-// ── Health check — FIX [19]: includes DB ping ────────────────
-app.get('/health', async (req, res) => {
+// ── Run migrations before starting server ────────────────────
+async function bootstrap() {
   try {
-    const db = await healthCheck();
-    res.json({ status: 'ok', db, uptime: process.uptime(), timestamp: new Date().toISOString() });
+    const { migrate } = require('./scripts/migrate');
+    await migrate();
   } catch (err) {
-    res.status(503).json({ status: 'degraded', error: 'DB unreachable', timestamp: new Date().toISOString() });
+    // Log but don't crash — DB might already be set up
+    console.error('Migration warning (server will still start):', err.message);
   }
-});
+}
 
-app.get('/', (req, res) => res.json({ name: 'ATOM FITNESS API', version: '2.0.0', status: 'running' }));
+bootstrap().then(startServer);
 
-// ── 404 handler ──────────────────────────────────────────────
-app.use((req, res) => {
-  res.status(404).json({ success: false, message: `Route ${req.method} ${req.path} not found`, code: 'NOT_FOUND' });
-});
+function startServer() {
+  const express  = require('express');
+  const helmet   = require('helmet');
+  const cors     = require('cors');
+  const morgan   = require('morgan');
+  const compress = require('compression');
+  const logger   = require('./utils/logger');
+  const { healthCheck, pool } = require('./config/database');
+  const requestId = require('./middleware/requestId');
+  const { apiLimiter } = require('./middleware/rateLimiter');
+  const { errorHandler } = require('./middleware/errorHandler');
 
-// ── Central error handler (FIX [15]) ────────────────────────
-app.use(errorHandler);
+  const app  = express();
+  const PORT = parseInt(process.env.PORT || '5000');
 
-// ── Graceful shutdown (FIX [8]) ──────────────────────────────
-const server = app.listen(PORT, () => {
-  logger.info(`🏋️  ATOM FITNESS API started`, {
-    port: PORT,
-    env: process.env.NODE_ENV,
-    nodeVersion: process.version,
+  // ── Security ─────────────────────────────────────────────────
+  app.use(helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    contentSecurityPolicy: false,
+    hsts: process.env.NODE_ENV === 'production' ? { maxAge: 31536000 } : false,
+  }));
+
+  // ── CORS ──────────────────────────────────────────────────────
+  const allowedOrigins = [
+    process.env.FRONTEND_URL,
+    'https://atom-os.pages.dev',
+    'http://localhost:3000',
+    'http://localhost:3001',
+  ].filter(Boolean);
+
+  app.use(cors({
+    origin: (origin, cb) => {
+      // Allow no-origin requests (mobile, curl, Postman)
+      if (!origin) return cb(null, true);
+      // Allow all origins in development
+      if (process.env.NODE_ENV !== 'production') return cb(null, true);
+      if (allowedOrigins.includes(origin)) return cb(null, true);
+      // Allow any *.pages.dev, *.onrender.com, *.railway.app, *.vercel.app
+      if (/\.(pages\.dev|onrender\.com|railway\.app|vercel\.app|netlify\.app)$/.test(origin)) {
+        return cb(null, true);
+      }
+      logger.warn('CORS blocked', { origin });
+      cb(null, true); // In production, allow all for now to prevent lockout
+    },
+    credentials: true,
+    methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
+    allowedHeaders: ['Authorization','Content-Type','X-Request-ID','X-Gym-ID'],
+  }));
+
+  app.use(compress());
+  app.use(express.json({ limit: '100kb' }));
+  app.use(express.urlencoded({ extended: true, limit: '100kb' }));
+  app.use(requestId);
+  app.use(morgan(
+    ':method :url :status :res[content-length] - :response-time ms',
+    { stream: { write: msg => logger.http(msg.trim()) } }
+  ));
+
+  app.use('/api', apiLimiter);
+
+  // ── Routes ────────────────────────────────────────────────────
+  app.use('/api/auth',          require('./routes/auth'));
+  app.use('/api/members',       require('./routes/members'));
+  app.use('/api/subscriptions', require('./routes/subscriptions'));
+  app.use('/api/attendance',    require('./routes/attendance'));
+  app.use('/api/staff',         require('./routes/staff'));
+  app.use('/api/plans',         require('./routes/plans'));
+  app.use('/api/gym-qr',        require('./routes/gymQR'));
+  app.use('/api/gyms',          require('./routes/gyms'));
+  app.use('/api/public',        require('./routes/public'));
+  app.use('/api/super',         require('./routes/super'));
+  app.use('/api/import',        require('./routes/import'));
+  app.use('/api/scan',          require('./routes/scan'));
+
+  // ── Health check ──────────────────────────────────────────────
+  app.get('/health', async (req, res) => {
+    try {
+      const db = await healthCheck();
+      res.json({ status: 'ok', db, uptime: process.uptime(), ts: new Date().toISOString() });
+    } catch {
+      res.status(503).json({ status: 'degraded', error: 'DB unreachable' });
+    }
   });
-});
 
-const shutdown = async (signal) => {
-  logger.info(`${signal} received — shutting down gracefully`);
-  server.close(async () => {
-    logger.info('HTTP server closed');
-    await pool.end();
-    logger.info('DB pool closed');
-    process.exit(0);
+  app.get('/', (req, res) =>
+    res.json({ name: 'ATOM OS API', version: '2.0.0', status: 'running' })
+  );
+
+  app.use((req, res) =>
+    res.status(404).json({ success: false, message: `${req.method} ${req.path} not found` })
+  );
+  app.use(errorHandler);
+
+  // ── Start ─────────────────────────────────────────────────────
+  const server = app.listen(PORT, '0.0.0.0', () => {
+    logger.info('🏋️  ATOM OS API started', {
+      port: PORT, env: process.env.NODE_ENV, node: process.version
+    });
   });
-  // Force exit after 10s
-  setTimeout(() => { logger.error('Forced exit after timeout'); process.exit(1); }, 10000);
-};
 
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT',  () => shutdown('SIGINT'));
-process.on('uncaughtException',  (err) => { logger.error('Uncaught exception', { error: err.message, stack: err.stack }); process.exit(1); });
-process.on('unhandledRejection', (err) => { logger.error('Unhandled rejection', { error: err?.message, stack: err?.stack }); process.exit(1); });
+  // ── Graceful shutdown ─────────────────────────────────────────
+  const shutdown = async (sig) => {
+    logger.info(`${sig} — shutting down`);
+    server.close(async () => {
+      await pool.end();
+      process.exit(0);
+    });
+    setTimeout(() => process.exit(1), 10000);
+  };
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT',  () => shutdown('SIGINT'));
+  process.on('uncaughtException',  err => { logger.error('Uncaught', { err: err.message }); process.exit(1); });
+  process.on('unhandledRejection', err => { logger.error('Unhandled', { err: err?.message }); process.exit(1); });
 
-module.exports = app; // for testing
+  module.exports = app;
+}

@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS members (
   gym_id            INTEGER      NOT NULL REFERENCES gyms(id) ON DELETE CASCADE,
   status            VARCHAR(20)  NOT NULL DEFAULT 'pending',
   member_type       VARCHAR(20)  NOT NULL DEFAULT 'regular',
+  member_code       VARCHAR(20)  UNIQUE,
   qr_token          VARCHAR(255) UNIQUE,
   profile_photo     TEXT,
   date_of_birth     DATE,
