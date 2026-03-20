@@ -24,7 +24,7 @@ function CreateGymModal({ open, onClose, onCreated }) {
     setLoading(true);
     try {
       const r = await api.post('/super/gyms', form);
-      setResult(r.data);
+      setResult(r.data?.data || r.data);
       toast('Gym created!', 'success');
       onCreated();
     } catch (err) {
@@ -95,7 +95,7 @@ export default function GymListPage() {
     setLoading(true);
     try {
       const r = await api.get('/super/gyms', { params: { search } });
-      setGyms(r.data?.gyms || r.data || []);
+      setGyms(r.data?.data?.gyms || r.data?.gyms || r.data || []);
     } catch { toast('Failed to load gyms', 'error'); }
     finally { setLoading(false); }
   }, [search, toast]);

@@ -17,8 +17,9 @@ export default function SuperDashboard() {
         api.get('/super/stats'),
         api.get('/super/gyms'),
       ]);
-      setStats(s.data);
-      setGyms((g.data?.gyms || g.data || []).slice(0, 8));
+      setStats(s.data?.data || s.data || {});
+      const gymList = g.data?.data?.gyms || g.data?.gyms || g.data || [];
+      setGyms(gymList.slice(0, 8));
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }, []);

@@ -91,7 +91,7 @@ export default function GymDetailPage() {
     setLoading(true);
     try {
       const r = await api.get(`/super/gyms/${gymId}`);
-      setData(r.data);
+      setData(r.data?.data || r.data);
     } catch { toast('Failed to load gym', 'error'); navigate('/super/gyms'); }
     finally { setLoading(false); }
   }, [gymId, toast, navigate]);
@@ -102,7 +102,8 @@ export default function GymDetailPage() {
       const r = await api.get(`/super/gyms/${gymId}/members`, {
         params: { search: memberSearch, role: memberRole }
       });
-      setMembers(r.data?.members || r.data || []);
+      const md = r.data?.data || r.data;
+      setMembers(md?.members || []);
     } catch { toast('Failed to load members', 'error'); }
     finally { setMembersLoading(false); }
   }, [gymId, memberSearch, memberRole, toast]);
@@ -323,7 +324,7 @@ function AuditTab({ gymId }) {
 
   useEffect(() => {
     api.get(`/super/gyms/${gymId}/audit`)
-      .then(r => setLogs(r.data?.logs || r.data || []))
+      .then(r => setLogs(r.data?.data?.logs || r.data?.logs || []))
       .catch(() => toast('Failed to load audit log', 'error'))
       .finally(() => setLoading(false));
   }, [gymId, toast]);

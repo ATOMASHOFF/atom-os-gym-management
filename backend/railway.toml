@@ -1,5 +1,12 @@
 [build]
-buildCommand = "npm install"
+builder = "nixpacks"
+
+[build.nixpacksPlan.phases.install]
+cmds = ["npm install"]
 
 [deploy]
-startCommand = "node scripts/migrate.js && node server.js"
+startCommand = "node server.js"
+healthcheckPath = "/health"
+healthcheckTimeout = 60
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
