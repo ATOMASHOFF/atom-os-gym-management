@@ -51,7 +51,7 @@ export const AuthProvider = ({ children }) => {
     return usr;
   };
 
-  const refreshUser = () => fetchMe();
+  const refreshUser = useCallback(() => fetchMe(), [fetchMe]);
 
   const can = (permission) => {
     if (!user) return false;

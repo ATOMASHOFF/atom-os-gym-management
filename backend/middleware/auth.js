@@ -3,16 +3,20 @@ const jwt = require('jsonwebtoken');
 const { query } = require('../config/database');
 const AppError = require('../utils/AppError');
 
-/**
- * authenticate — verifies JWT and populates req.user + req.gymId.
- *
- * Token payload shape:
- *   { userId, email, role, gymId, isSuperAdmin? }
- *
- * Super admins:   req.user.role = 'super_admin', req.gymId = null
- *                 They can access any gym via X-Gym-ID header or :gymId param.
- * Gym members:    req.gymId = their gym from JWT (immutable)
- */
+// Allowlist for requirePermission — prevents SQL injection via dynamic column names
+const VALID_PERMISSIONS = new Set([
+  'can_scan_attendance',
+  'can_view_members',
+  'can_add_members',
+  'can_edit_members',
+  'can_delete_members',
+  'can_view_subscriptions',
+  'can_add_subscriptions',
+  'can_view_attendance',
+  'can_view_reports',
+  'can_view_financial',
+]);
+
 const authenticate = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
@@ -23,89 +27,70 @@ const authenticate = async (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     if (decoded.isSuperAdmin) {
-      // Look up super_admin table
       const result = await query(
         'SELECT id, name, email FROM super_admins WHERE id = $1 AND is_active = true',
         [decoded.userId]
       );
       if (!result.rows.length) return next(AppError.unauthorized('Account not found'));
-
       req.user = { ...result.rows[0], role: 'super_admin', gym_id: null };
-      req.gymId = null;  // Super admin has no default gym — resolved per request
+      req.gymId = null;
       req.isSuperAdmin = true;
     } else {
-      // Regular gym member / admin / staff
       const result = await query(
         'SELECT id, name, email, role, gym_id, status FROM members WHERE id = $1 AND is_active = true',
         [decoded.userId]
       );
       if (!result.rows.length) return next(AppError.unauthorized('Account not found'));
-
       const user = result.rows[0];
-      if (user.status === 'suspended') return next(AppError.unauthorized('Account suspended'));
-      if (user.status === 'inactive')  return next(AppError.unauthorized('Account inactive'));
-
+      if (user.status === 'suspended') return next(AppError.unauthorized('Account suspended — contact your gym'));
+      if (user.status === 'inactive')  return next(AppError.unauthorized('Account inactive — contact your gym'));
       req.user = user;
       req.gymId = user.gym_id;
       req.isSuperAdmin = false;
     }
     next();
   } catch (err) {
-    if (err.name === 'TokenExpiredError') return next(AppError.unauthorized('Token expired'));
+    if (err.name === 'TokenExpiredError') return next(AppError.unauthorized('Session expired — please sign in again'));
     return next(AppError.unauthorized('Invalid token'));
   }
 };
 
-/**
- * requireRole — allow access only to listed roles.
- * Always allow super_admin unless explicitly excluded.
- */
 const requireRole = (...roles) => (req, res, next) => {
-  if (req.isSuperAdmin) return next(); // super admin passes everything
+  if (req.isSuperAdmin) return next();
   if (!roles.includes(req.user.role)) {
-    return next(AppError.forbidden(`Requires role: ${roles.join(' or ')}`));
+    return next(AppError.forbidden(`Access denied`));
   }
   next();
 };
 
-/**
- * requireSuperAdmin — only platform-level super admins.
- */
 const requireSuperAdmin = (req, res, next) => {
   if (!req.isSuperAdmin) return next(AppError.forbidden('Super admin access required'));
   next();
 };
 
-/**
- * resolveGymId — for super admin requests, resolve which gym they're acting on.
- * Reads from: X-Gym-ID header, or :gymId URL param, or query ?gym_id=
- * For regular users, their gymId is already set from JWT.
- */
 const resolveGymId = async (req, res, next) => {
-  if (!req.isSuperAdmin) return next(); // regular users already have gymId
-
+  if (!req.isSuperAdmin) return next();
   const gymId =
     req.headers['x-gym-id'] ||
     req.params.gymId ||
     req.query.gym_id ||
     req.body?.gym_id;
-
-  if (!gymId) return next(); // super admin global endpoints don't need a gym
-
-  // Validate gym exists
+  if (!gymId) return next();
   const result = await query('SELECT id FROM gyms WHERE id = $1 AND is_active = true', [gymId]);
   if (!result.rows.length) return next(AppError.notFound('Gym not found'));
-
   req.gymId = parseInt(gymId);
   next();
 };
 
-/**
- * requirePermission — staff granular permissions.
- * Admins and super_admins always pass.
- */
+// FIXED: SQL injection via dynamic column name — now uses allowlist
 const requirePermission = (permission) => async (req, res, next) => {
   if (req.isSuperAdmin || req.user.role === 'admin') return next();
+
+  // Validate permission is a known column — prevents SQL injection
+  if (!VALID_PERMISSIONS.has(permission)) {
+    return next(AppError.forbidden('Unknown permission'));
+  }
+
   try {
     const result = await query(
       `SELECT ${permission} FROM staff_permissions WHERE staff_id = $1 AND gym_id = $2`,

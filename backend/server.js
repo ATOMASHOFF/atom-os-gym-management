@@ -24,7 +24,11 @@ function startServer() {
   const morgan   = require('morgan');
   const compress = require('compression');
   const logger   = require('./utils/logger');
-  const { healthCheck, pool } = require('./config/database');
+  const { healthCheck, pool, expireSubscriptions } = require('./config/database');
+
+  // Auto-expire past-due subscriptions on startup + every hour
+  expireSubscriptions();
+  setInterval(expireSubscriptions, 60 * 60 * 1000);
   const requestId = require('./middleware/requestId');
   const { apiLimiter } = require('./middleware/rateLimiter');
   const { errorHandler } = require('./middleware/errorHandler');

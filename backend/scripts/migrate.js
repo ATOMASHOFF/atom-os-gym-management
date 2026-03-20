@@ -40,6 +40,9 @@ const pool = new Pool({
 
 // ── Schema patches — safe on any existing database ───────────
 const PATCHES = [
+  // Sequence for atomic member codes
+  `CREATE SEQUENCE IF NOT EXISTS member_code_seq START 1 INCREMENT 1`,
+
   // gyms
   `ALTER TABLE gyms ADD COLUMN IF NOT EXISTS plan     VARCHAR(20) NOT NULL DEFAULT 'starter'`,
   `ALTER TABLE gyms ADD COLUMN IF NOT EXISTS timezone VARCHAR(50) DEFAULT 'Asia/Kolkata'`,

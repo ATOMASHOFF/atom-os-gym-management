@@ -131,8 +131,9 @@ const createMember = catchAsync(async (req, res) => {
     const r = await client.query(
       `INSERT INTO members
          (name, email, phone, password_hash, role, gym_id, status, member_type,
-          date_of_birth, address, emergency_contact, notes, qr_token)
-       VALUES ($1,$2,$3,$4,$5,$6,'active',$7,$8,$9,$10,$11,$12)
+          date_of_birth, address, emergency_contact, notes, qr_token, member_code)
+       VALUES ($1,$2,$3,$4,$5,$6,'active',$7,$8,$9,$10,$11,$12,
+         'ATM-' || LPAD(nextval('member_code_seq')::text, 6, '0'))
        RETURNING id, name, email, phone, role, status, member_type, created_at`,
       [name, email.toLowerCase(), phone || null, hash, role, req.gymId,
        member_type, date_of_birth || null, address || null, emergency_contact || null,

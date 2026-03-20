@@ -24,16 +24,22 @@ api.interceptors.request.use(
 // Reason: login returns { success, token, user } — no "data" key.
 // Unwrapping that breaks token extraction in AuthContext.
 
-let isRedirecting = false;
+// FIXED: use sessionStorage so flag resets on hot reload in dev
+const getRedirecting = () => sessionStorage.getItem('__atom_redirecting') === '1';
+const setRedirecting = () => sessionStorage.setItem('__atom_redirecting', '1');
+const clearRedirecting = () => sessionStorage.removeItem('__atom_redirecting');
 
 api.interceptors.response.use(
-  (res) => res,  // pass through unchanged
+  (res) => {
+    clearRedirecting(); // reset on any success
+    return res;
+  },
   async (err) => {
     const config = err.config;
 
     // 401 — expired or invalid token
-    if (err.response?.status === 401 && !isRedirecting) {
-      isRedirecting = true;
+    if (err.response?.status === 401 && !getRedirecting()) {
+      setRedirecting();
       localStorage.removeItem('atom_token');
       window.location.href = '/login';
       return Promise.reject(err);

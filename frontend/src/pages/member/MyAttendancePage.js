@@ -8,10 +8,21 @@ export default function MyAttendancePage() {
   const { user } = useAuth();
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     if (user?.id) {
-      api.get(`/attendance/member/${user.id}`).then(r => setLogs(r.data.attendance || [])).catch(() => {}).finally(() => setLoading(false));
+      setError('');
+      api.get(`/attendance/member/${user.id}`)
+        .then(r => {
+          // FIXED: handle both response shapes + silent error removed
+          const data = r.data?.data?.attendance || r.data?.attendance || r.data?.data || [];
+          setLogs(Array.isArray(data) ? data : []);
+        })
+        .catch(err => {
+          setError(err?.response?.data?.message || 'Could not load attendance');
+        })
+        .finally(() => setLoading(false));
     }
   }, [user]);
 
@@ -26,6 +37,13 @@ export default function MyAttendancePage() {
   return (
     <div>
       <PageHeader title="MY ATTENDANCE" subtitle={`${logs.length} total visits recorded`} />
+
+      {/* Error state */}
+      {error && (
+        <div style={{ background: 'rgba(220,50,50,0.1)', border: '1px solid rgba(220,50,50,0.3)', borderRadius: 6, padding: '12px 16px', marginBottom: 16, color: '#e05555', fontSize: 13, display: 'flex', gap: 8, alignItems: 'center' }}>
+          ⚠ {error}
+        </div>
+      )}
 
       {/* 30-day heatmap */}
       <Card style={{ padding: 20, marginBottom: 20 }} className="fadeUp">

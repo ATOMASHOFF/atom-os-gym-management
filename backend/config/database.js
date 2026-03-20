@@ -58,4 +58,27 @@ const audit = (gymId, actorId, actorRole, action, entity, entityId, oldData, new
      ip, requestId]
   ).catch(err => logger.error('Audit log failed', { error: err.message })); // never throw
 
-module.exports = { query, withTransaction, healthCheck, audit, pool };
+module.exports = { query, withTransaction, healthCheck, audit, pool, expireSubscriptions };
+
+// ── Auto-expire subscriptions past end_date ───────────────────
+// Call this on startup and periodically (e.g. every hour)
+async function expireSubscriptions() {
+  try {
+    const result = await query(
+      `UPDATE subscriptions
+       SET status = 'expired', updated_at = NOW()
+       WHERE status = 'active' AND end_date < CURRENT_DATE
+       RETURNING id`
+    );
+    if (result.rowCount > 0) {
+      const logger = require('../utils/logger');
+      logger.info('Auto-expired subscriptions', { count: result.rowCount });
+    }
+    return result.rowCount;
+  } catch (err) {
+    const logger = require('../utils/logger');
+    logger.warn('expireSubscriptions failed', { error: err.message });
+    return 0;
+  }
+}
+

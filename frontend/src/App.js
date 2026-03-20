@@ -33,6 +33,7 @@ import MyProfilePage from './pages/member/MyProfilePage';
 import MyAttendancePage from './pages/member/MyAttendancePage';
 import CheckInPage from './pages/member/CheckInPage';
 import NotFoundPage from './pages/NotFoundPage';
+import ScannerPage from './pages/ScannerPage';
 
 // ── Loading screen ───────────────────────────────────────────
 export const LoadingScreen = () => (
@@ -175,6 +176,7 @@ function AppRoutes() {
         <Route path="my-profile"    element={<PrivateRoute roles={['member']}><MyProfilePage /></PrivateRoute>} />
         <Route path="my-attendance" element={<PrivateRoute roles={['member']}><MyAttendancePage /></PrivateRoute>} />
         <Route path="checkin"       element={<PrivateRoute><CheckInPage /></PrivateRoute>} />
+        <Route path="scanner"       element={<PrivateRoute roles={['admin','staff']}><ScannerPage /></PrivateRoute>} />
 
         {/* Fallback */}
         <Route path="*" element={<NotFoundPage />} />

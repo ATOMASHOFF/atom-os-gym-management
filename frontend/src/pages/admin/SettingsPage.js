@@ -15,7 +15,14 @@ export default function SettingsPage() {
   const { user } = useAuth();
 
   useEffect(() => {
-    api.get('/gyms/current').then(r => setGym(r.data)).catch(() => {}).finally(() => setLoading(false));
+    api.get('/gyms/current')
+      .then(r => {
+        // FIXED: handle both {success,data:{...}} and direct object
+        const gymData = r.data?.data || r.data;
+        setGym(gymData);
+      })
+      .catch(() => { toast('Could not load gym settings', 'error'); })
+      .finally(() => setLoading(false));
   }, []);
 
   const handleSaveGym = async (e) => {

@@ -6,7 +6,16 @@ const { catchAsync } = require('../middleware/errorHandler');
 const crypto = require('crypto');
 
 const getGyms = catchAsync(async (req, res) => {
-  const r = await query('SELECT id, name, slug, address, owner_name FROM gyms WHERE is_active=true ORDER BY name');
+  const { search } = req.query;
+  // FIXED: add search + limit to prevent loading 1000+ gyms on login page
+  let sql = 'SELECT id, name, slug, address FROM gyms WHERE is_active=true';
+  const params = [];
+  if (search) {
+    sql += ' AND name ILIKE $1';
+    params.push(`%${search.trim()}%`);
+  }
+  sql += ' ORDER BY name LIMIT 100';
+  const r = await query(sql, params);
   res.json({ success: true, data: { gyms: r.rows } });
 });
 

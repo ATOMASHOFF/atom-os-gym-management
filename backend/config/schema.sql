@@ -5,6 +5,9 @@
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
+-- Sequence for unique member codes (ATM-000001)
+CREATE SEQUENCE IF NOT EXISTS member_code_seq START 1 INCREMENT 1;
+
 -- ── Gyms ────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS gyms (
   id            SERIAL PRIMARY KEY,

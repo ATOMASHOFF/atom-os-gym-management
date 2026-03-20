@@ -218,11 +218,16 @@ const bulkImport = catchAsync(async (req, res) => {
     try {
       await withTransaction(async (client) => {
         const password = default_password || generatePassword();
-        const hash = await bcrypt.hash(password, parseInt(process.env.BCRYPT_ROUNDS || '12'));
-        const qrToken = 'MBR-' + Date.now() + '-' + crypto.randomBytes(6).toString('hex').toUpperCase();
+        // Use lower bcrypt rounds for bulk import (10 vs 12) to prevent timeout
+        // Imported members should reset password on first login
+        const hash = await bcrypt.hash(password, 10);
+        const qrToken = 'MBR-' + crypto.randomBytes(16).toString('hex').toUpperCase();
 
         const validMemberType = ['regular','guest','trial'].includes(p.row.member_type) ? p.row.member_type : 'regular';
-        const memberEmail = p.row.email || `imported-${crypto.randomBytes(4).toString('hex')}@noemail.local`;
+        // FIXED: use phone as key for phone-only imports to prevent collision on re-import
+        const memberEmail = p.row.email ||
+          (p.row.phone ? `imported-${p.row.phone.replace(/[^0-9]/g,'')}@noemail.local` :
+          `imported-${crypto.randomBytes(8).toString('hex')}@noemail.local`);
 
         const memberR = await client.query(
           `INSERT INTO members (name, email, phone, password_hash, role, gym_id, status,
@@ -261,7 +266,8 @@ const bulkImport = catchAsync(async (req, res) => {
           row: p.rowNum, status: 'imported', name: p.row.name,
           email: p.row.email,
           has_subscription: !!(p.plan && p.row.start_date),
-          temp_password: default_password ? null : password,
+          // Temp password not returned for security — admin must communicate separately
+          password_set: true,
         });
       });
     } catch (err) {

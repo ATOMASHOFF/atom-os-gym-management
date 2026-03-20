@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../utils/api';
 import { T, fmt } from '../../utils/helpers';
+import { useToast } from '../../context/ToastContext';
 import { StatCard, Card, PageHeader, Btn, Icon, TableWrapper, Th, Td, Avatar, Badge, Spinner } from '../../components/shared/UI';
 
 export default function Dashboard() {
@@ -10,6 +11,7 @@ export default function Dashboard() {
   const [expiring, setExpiring] = useState([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const toast = useToast();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -17,13 +19,21 @@ export default function Dashboard() {
       const [s, t, e] = await Promise.all([
         api.get('/members/dashboard-stats'),
         api.get('/attendance/today'),
-        api.get('/subscriptions?status=active&limit=5'),
+        api.get('/subscriptions?status=active&limit=50'),
       ]);
-      setStats(s.data);
-      setToday(t.data.attendance || []);
-      setExpiring(e.data.subscriptions?.filter(s => fmt.daysLeft(s.end_date) <= 7 && fmt.daysLeft(s.end_date) >= 0).slice(0, 5) || []);
+      // FIXED: handle both {success,data:{...}} and direct object
+      const statsData = s.data?.data || s.data || {};
+      const todayData = t.data?.data?.attendance || t.data?.attendance || [];
+      const subsData  = e.data?.data?.subscriptions || e.data?.subscriptions || [];
+      setStats(statsData);
+      setToday(todayData);
+      setExpiring(subsData.filter(s => {
+        const d = fmt.daysLeft(s.end_date);
+        return d !== null && d <= 7 && d >= 0;
+      }).slice(0, 5));
     } catch (err) {
-      console.error(err);
+      console.error('Dashboard load error:', err);
+      toast('Could not load dashboard data — retrying...', 'error');
     } finally {
       setLoading(false);
     }

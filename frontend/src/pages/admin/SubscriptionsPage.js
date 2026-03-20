@@ -69,6 +69,7 @@ function SubModal({ open, onClose, onSave }) {
 export default function SubscriptionsPage() {
   const [subs, setSubs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [cancelling, setCancelling] = useState(null);
   const [search, setSearch] = useState('');
   const [tab, setTab] = useState('all');
   const [showAdd, setShowAdd] = useState(false);
