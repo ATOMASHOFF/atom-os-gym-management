@@ -131,8 +131,8 @@ export const Textarea = ({ label, value, onChange, placeholder, rows = 3, style 
 export const Modal = ({ open, onClose, title, children, width = 520 }) => {
   if (!open) return null;
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: '#00000088', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, backdropFilter: 'blur(4px)' }}>
-      <div onClick={e => e.stopPropagation()} className="fadeUp" style={{ background: T.bg2, border: `1px solid ${T.borderBright}`, borderRadius: 8, width: '100%', maxWidth: width, maxHeight: '90vh', overflow: 'auto' }}>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: T.bg2, border: `1px solid ${T.borderBright}`, borderRadius: 8, width: '100%', maxWidth: width, maxHeight: '90vh', overflow: 'auto', animation: 'none' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: `1px solid ${T.border}` }}>
           <div style={{ fontFamily: T.display, fontWeight: 800, fontSize: 16, letterSpacing: '0.04em' }}>{title}</div>
           <button onClick={onClose} style={{ background: 'transparent', color: T.muted, display: 'flex', padding: 4, borderRadius: 4 }}>

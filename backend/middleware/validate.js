@@ -16,7 +16,7 @@ const validate = (validations) => async (req, res, next) => {
 // ── Schema definitions ─────────────────────────────────────────────────────
 const schemas = {
   login: [
-    body('email').isEmail().normalizeEmail().withMessage('Valid email required'),
+    body('email').isEmail().withMessage('Valid email required'),
     body('password').isLength({ min: 1 }).withMessage('Password required'),
     body('gym_id').optional().isInt({ min: 1 }).toInt(),
   ],
