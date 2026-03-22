@@ -20,6 +20,9 @@ async function generateMemberCode(client) {
 
 // ── GET /api/members ──────────────────────────────────────────────────────────
 const getMembers = catchAsync(async (req, res) => {
+  // Guard: gym_id must be set — super admin needs X-Gym-ID header
+  if (!req.gymId) throw AppError.badRequest('gym_id required — super admin must pass X-Gym-ID header');
+
   const { role, status, search } = req.query;
   const page   = Math.max(1, parseInt(req.query.page)  || 1);
   const limit  = Math.min(100, Math.max(1, parseInt(req.query.limit) || 50));
@@ -138,10 +141,26 @@ const createMember = catchAsync(async (req, res) => {
   } = req.body;
 
   const exists = await query(
-    'SELECT id FROM members WHERE email = $1 AND gym_id = $2',
+    'SELECT id, name, status, is_active FROM members WHERE email = $1 AND gym_id = $2',
     [email.toLowerCase(), req.gymId]
   );
-  if (exists.rows.length) throw AppError.conflict('Email already registered at this gym');
+  if (exists.rows.length) {
+    const m = exists.rows[0];
+    if (!m.is_active) {
+      throw AppError.conflict(
+        `This email belongs to a removed member (${m.name}). ` +
+        `Restore them from the database or use a different email.`
+      );
+    }
+    if (m.status === 'pending') {
+      throw AppError.conflict(
+        `This email already has a pending registration awaiting approval.`
+      );
+    }
+    throw AppError.conflict(
+      `Email already registered in this gym. Use a different email address.`
+    );
+  }
 
   const hash     = await bcrypt.hash(password, parseInt(process.env.BCRYPT_ROUNDS || '12'));
   const qrToken  = 'MBR-' + crypto.randomBytes(16).toString('hex').toUpperCase();
