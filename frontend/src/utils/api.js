@@ -13,6 +13,17 @@ api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('atom_token');
     if (token) config.headers.Authorization = `Bearer ${token}`;
+
+    // Bust browser HTTP cache on every GET request
+    // Prevents 304 Not Modified returning stale empty responses
+    if (config.method === 'get' || !config.method) {
+      config.params = { ...config.params, _t: Date.now() };
+    }
+
+    // Tell browser not to cache API responses
+    config.headers['Cache-Control'] = 'no-cache';
+    config.headers['Pragma'] = 'no-cache';
+
     return config;
   },
   (err) => Promise.reject(err)

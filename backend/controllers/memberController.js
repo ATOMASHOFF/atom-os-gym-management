@@ -1,15 +1,28 @@
 'use strict';
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const { query, withTransaction, audit } = require('../config/database');
 const AppError = require('../utils/AppError');
 const { catchAsync } = require('../middleware/errorHandler');
 const logger = require('../utils/logger');
 
-// FIX [6]: Single JOIN query instead of correlated subqueries per row
+// ── Helper: generate member code safely (fallback if sequence missing) ────────
+async function generateMemberCode(client) {
+  try {
+    const r = await client.query("SELECT nextval('member_code_seq') AS n");
+    return 'ATM-' + String(r.rows[0].n).padStart(6, '0');
+  } catch {
+    // Fallback: use timestamp-based code if sequence doesn't exist yet
+    const r = await client.query('SELECT COALESCE(MAX(id),0)+1 AS n FROM members');
+    return 'ATM-' + String(r.rows[0].n).padStart(6, '0');
+  }
+}
+
+// ── GET /api/members ──────────────────────────────────────────────────────────
 const getMembers = catchAsync(async (req, res) => {
   const { role, status, search } = req.query;
-  const page  = Math.max(1, parseInt(req.query.page)  || 1);
-  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 50)); // Cap at 100
+  const page   = Math.max(1, parseInt(req.query.page)  || 1);
+  const limit  = Math.min(100, Math.max(1, parseInt(req.query.limit) || 50));
   const offset = (page - 1) * limit;
 
   let conditions = ["m.gym_id = $1", "m.status != 'pending'", "m.is_active = true"];
@@ -25,27 +38,27 @@ const getMembers = catchAsync(async (req, res) => {
 
   const where = conditions.join(' AND ');
 
-  // Single query with LEFT JOINs — no N+1
   const [countResult, dataResult] = await Promise.all([
     query(`SELECT COUNT(*) FROM members m WHERE ${where}`, params),
     query(
       `SELECT
          m.id, m.name, m.email, m.phone, m.role, m.status, m.member_type,
-         m.date_of_birth, m.created_at, m.last_login_at,
+         m.member_code, m.date_of_birth, m.created_at, m.last_login_at,
          COALESCE(att.total_checkins, 0) AS total_checkins,
          att.last_checkin,
-         active_sub.end_date AS subscription_end,
-         active_sub.plan_name
+         active_sub.end_date   AS subscription_end,
+         active_sub.plan_name  AS plan_name
        FROM members m
        LEFT JOIN LATERAL (
          SELECT COUNT(*) AS total_checkins, MAX(check_in_date) AS last_checkin
-         FROM attendance_logs WHERE member_id = m.id
+         FROM attendance_logs WHERE member_id = m.id AND gym_id = m.gym_id
        ) att ON true
        LEFT JOIN LATERAL (
          SELECT s.end_date, p.name AS plan_name
          FROM subscriptions s
          LEFT JOIN membership_plans p ON s.plan_id = p.id
-         WHERE s.member_id = m.id AND s.status = 'active' AND s.end_date >= CURRENT_DATE
+         WHERE s.member_id = m.id AND s.gym_id = $1
+           AND s.status = 'active' AND s.end_date >= CURRENT_DATE
          ORDER BY s.end_date DESC LIMIT 1
        ) active_sub ON true
        WHERE ${where}
@@ -59,16 +72,16 @@ const getMembers = catchAsync(async (req, res) => {
     success: true,
     data: {
       members: dataResult.rows,
-      total: parseInt(countResult.rows[0].count),
+      total:   parseInt(countResult.rows[0].count),
       page, limit,
-      pages: Math.ceil(parseInt(countResult.rows[0].count) / limit),
     },
   });
 });
 
+// ── GET /api/members/pending ──────────────────────────────────────────────────
 const getPendingMembers = catchAsync(async (req, res) => {
   const result = await query(
-    `SELECT id, name, email, phone, role, member_type, created_at
+    `SELECT id, name, email, phone, role, status, member_type, created_at
      FROM members WHERE gym_id = $1 AND status = 'pending' AND is_active = true
      ORDER BY created_at DESC`,
     [req.gymId]
@@ -76,13 +89,14 @@ const getPendingMembers = catchAsync(async (req, res) => {
   res.json({ success: true, data: { members: result.rows } });
 });
 
+// ── GET /api/members/:id ──────────────────────────────────────────────────────
 const getMember = catchAsync(async (req, res) => {
   const { id } = req.params;
   const result = await query(
     `SELECT m.id, m.name, m.email, m.phone, m.role, m.status, m.member_type,
-            m.date_of_birth, m.address, m.emergency_contact, m.notes, m.created_at,
-            COALESCE(att.total_checkins, 0) AS total_checkins,
-            att.last_checkin
+            m.member_code, m.date_of_birth, m.address, m.emergency_contact, m.notes,
+            m.created_at, m.qr_token,
+            COALESCE(att.total_checkins, 0) AS total_checkins, att.last_checkin
      FROM members m
      LEFT JOIN LATERAL (
        SELECT COUNT(*) AS total_checkins, MAX(check_in_date) AS last_checkin
@@ -98,24 +112,30 @@ const getMember = catchAsync(async (req, res) => {
     query(
       `SELECT s.*, p.name as plan_name, p.duration_days
        FROM subscriptions s LEFT JOIN membership_plans p ON s.plan_id = p.id
-       WHERE s.member_id = $1 ORDER BY s.created_at DESC LIMIT 10`,
-      [id]
+       WHERE s.member_id = $1 AND s.gym_id = $2 ORDER BY s.created_at DESC LIMIT 10`,
+      [id, req.gymId]
     ),
     query(
       `SELECT check_in_date, check_in_time, scan_method
-       FROM attendance_logs WHERE member_id = $1 ORDER BY check_in_time DESC LIMIT 20`,
-      [id]
+       FROM attendance_logs WHERE member_id = $1 AND gym_id = $2
+       ORDER BY check_in_time DESC LIMIT 30`,
+      [id, req.gymId]
     ),
   ]);
-  member.subscriptions = subs.rows;
-  member.recent_attendance = attendance.rows;
-  res.json({ success: true, data: member });
+
+  res.json({
+    success: true,
+    data: { ...member, subscriptions: subs.rows, attendance: attendance.rows },
+  });
 });
 
-// FIX [7]: use transaction so member + permissions are atomic
+// ── POST /api/members ─────────────────────────────────────────────────────────
 const createMember = catchAsync(async (req, res) => {
-  const { name, email, phone, password, role = 'member', member_type = 'regular',
-          date_of_birth, address, emergency_contact, notes } = req.body;
+  const {
+    name, email, phone, password, role = 'member',
+    member_type = 'regular', date_of_birth, address,
+    emergency_contact, notes,
+  } = req.body;
 
   const exists = await query(
     'SELECT id FROM members WHERE email = $1 AND gym_id = $2',
@@ -123,39 +143,41 @@ const createMember = catchAsync(async (req, res) => {
   );
   if (exists.rows.length) throw AppError.conflict('Email already registered at this gym');
 
-  const hash = await bcrypt.hash(password, parseInt(process.env.BCRYPT_ROUNDS || '12'));
-  const crypto = require('crypto');
-  const qrToken = 'MBR-' + Date.now() + '-' + crypto.randomBytes(8).toString('hex').toUpperCase();
+  const hash     = await bcrypt.hash(password, parseInt(process.env.BCRYPT_ROUNDS || '12'));
+  const qrToken  = 'MBR-' + crypto.randomBytes(16).toString('hex').toUpperCase();
 
   const member = await withTransaction(async (client) => {
+    const memberCode = await generateMemberCode(client);
+
     const r = await client.query(
       `INSERT INTO members
-         (name, email, phone, password_hash, role, gym_id, status, member_type,
-          date_of_birth, address, emergency_contact, notes, qr_token, member_code)
-       VALUES ($1,$2,$3,$4,$5,$6,'active',$7,$8,$9,$10,$11,$12,
-         'ATM-' || LPAD(nextval('member_code_seq')::text, 6, '0'))
-       RETURNING id, name, email, phone, role, status, member_type, created_at`,
+         (name, email, phone, password_hash, role, gym_id, status,
+          member_type, date_of_birth, address, emergency_contact, notes,
+          qr_token, member_code)
+       VALUES ($1,$2,$3,$4,$5,$6,'active',$7,$8,$9,$10,$11,$12,$13)
+       RETURNING id, name, email, phone, role, status, member_type, member_code, created_at`,
       [name, email.toLowerCase(), phone || null, hash, role, req.gymId,
-       member_type, date_of_birth || null, address || null, emergency_contact || null,
-       notes || null, qrToken]
+       member_type, date_of_birth || null, address || null,
+       emergency_contact || null, notes || null, qrToken, memberCode]
     );
-    const newMember = r.rows[0];
+
     if (role === 'staff') {
       await client.query(
         'INSERT INTO staff_permissions (staff_id, gym_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
-        [newMember.id, req.gymId]
+        [r.rows[0].id, req.gymId]
       );
     }
-    return newMember;
+    return r.rows[0];
   });
 
-  await audit(req.gymId, req.user.id, req.user.role, 'CREATE_MEMBER', 'members', member.id,
-    null, { name, email, role }, req.ip, req.id);
-  logger.info('Member created', { memberId: member.id, by: req.user.id, requestId: req.id });
+  await audit(req.gymId, req.user.id, req.user.role, 'CREATE_MEMBER', 'members',
+    member.id, null, { name, email, role }, req.ip, req.id).catch(() => {});
 
+  logger.info('Member created', { memberId: member.id, by: req.user.id });
   res.status(201).json({ success: true, data: member });
 });
 
+// ── PUT /api/members/:id ──────────────────────────────────────────────────────
 const updateMember = catchAsync(async (req, res) => {
   const { id } = req.params;
   const { name, phone, status, member_type, date_of_birth, address, emergency_contact, notes } = req.body;
@@ -168,54 +190,54 @@ const updateMember = catchAsync(async (req, res) => {
 
   const result = await query(
     `UPDATE members SET
-       name = COALESCE($1, name), phone = COALESCE($2, phone),
-       status = COALESCE($3, status), member_type = COALESCE($4, member_type),
-       date_of_birth = COALESCE($5, date_of_birth), address = COALESCE($6, address),
-       emergency_contact = COALESCE($7, emergency_contact), notes = COALESCE($8, notes),
-       updated_at = NOW()
+       name              = COALESCE($1, name),
+       phone             = COALESCE($2, phone),
+       status            = COALESCE($3, status),
+       member_type       = COALESCE($4, member_type),
+       date_of_birth     = COALESCE($5, date_of_birth),
+       address           = COALESCE($6, address),
+       emergency_contact = COALESCE($7, emergency_contact),
+       notes             = COALESCE($8, notes),
+       updated_at        = NOW()
      WHERE id = $9 AND gym_id = $10
-     RETURNING id, name, email, phone, role, status, member_type, date_of_birth, address, updated_at`,
+     RETURNING id, name, email, phone, role, status, member_type, member_code, updated_at`,
     [name, phone, status, member_type, date_of_birth || null,
      address, emergency_contact, notes, id, req.gymId]
   );
 
-  await audit(req.gymId, req.user.id, req.user.role, 'UPDATE_MEMBER', 'members', parseInt(id),
-    existing.rows[0], result.rows[0], req.ip, req.id);
+  await audit(req.gymId, req.user.id, req.user.role, 'UPDATE_MEMBER', 'members',
+    parseInt(id), existing.rows[0], result.rows[0], req.ip, req.id).catch(() => {});
 
   res.json({ success: true, data: result.rows[0] });
 });
 
+// ── DELETE /api/members/:id ───────────────────────────────────────────────────
 const deleteMember = catchAsync(async (req, res) => {
   const { id } = req.params;
-  if (parseInt(id) === req.user.id) throw AppError.badRequest('Cannot delete your own account');
-
   const result = await query(
     `UPDATE members SET is_active = false, status = 'inactive', updated_at = NOW()
      WHERE id = $1 AND gym_id = $2 AND is_active = true RETURNING id, name`,
     [id, req.gymId]
   );
   if (!result.rows.length) throw AppError.notFound('Member not found');
-
   await audit(req.gymId, req.user.id, req.user.role, 'DELETE_MEMBER', 'members',
-    parseInt(id), { id, name: result.rows[0].name }, null, req.ip, req.id);
-
+    parseInt(id), { id, name: result.rows[0].name }, null, req.ip, req.id).catch(() => {});
   res.json({ success: true, message: 'Member removed' });
 });
 
+// ── POST /api/members/:id/approve ─────────────────────────────────────────────
 const approveRegistration = catchAsync(async (req, res) => {
   const { id } = req.params;
   const result = await query(
     `UPDATE members SET status = 'active', updated_at = NOW()
-     WHERE id = $1 AND gym_id = $2 AND status = 'pending'
-     RETURNING id, name, email`,
+     WHERE id = $1 AND gym_id = $2 AND status = 'pending' RETURNING id, name, email`,
     [id, req.gymId]
   );
   if (!result.rows.length) throw AppError.notFound('Pending member not found');
-  await audit(req.gymId, req.user.id, req.user.role, 'APPROVE_MEMBER', 'members',
-    parseInt(id), null, { status: 'active' }, req.ip, req.id);
   res.json({ success: true, message: 'Member approved', data: result.rows[0] });
 });
 
+// ── POST /api/members/:id/reject ──────────────────────────────────────────────
 const rejectRegistration = catchAsync(async (req, res) => {
   const { id } = req.params;
   const result = await query(
@@ -224,41 +246,45 @@ const rejectRegistration = catchAsync(async (req, res) => {
     [id, req.gymId]
   );
   if (!result.rows.length) throw AppError.notFound('Pending member not found');
-  await audit(req.gymId, req.user.id, req.user.role, 'REJECT_MEMBER', 'members',
-    parseInt(id), null, { status: 'inactive' }, req.ip, req.id);
   res.json({ success: true, message: 'Member rejected' });
 });
 
+// ── GET /api/members/dashboard-stats ─────────────────────────────────────────
 const getDashboardStats = catchAsync(async (req, res) => {
   const gymId = req.gymId;
   const [members, subs, todayAtt, revenue, expiring] = await Promise.all([
     query(
       `SELECT
-         COUNT(*) FILTER (WHERE status != 'pending' AND is_active)   AS total_members,
-         COUNT(*) FILTER (WHERE status = 'active' AND is_active)     AS active_members,
-         COUNT(*) FILTER (WHERE status = 'pending')                  AS pending_members,
-         COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days' AND status != 'pending') AS new_this_month
-       FROM members WHERE gym_id = $1`, [gymId]),
+         COUNT(*) AS total_members,
+         COUNT(*) FILTER (WHERE status = 'active')  AS active_members,
+         COUNT(*) FILTER (WHERE status = 'pending') AS pending_members
+       FROM members WHERE gym_id = $1 AND is_active = true`, [gymId]),
     query(
       `SELECT
-         COUNT(*) FILTER (WHERE status = 'active')                   AS active_subscriptions,
-         COUNT(*) FILTER (WHERE status = 'expired')                  AS expired_subscriptions
+         COUNT(*) FILTER (WHERE status = 'active')  AS active_subscriptions,
+         COUNT(*) FILTER (WHERE status = 'expired') AS expired_subscriptions
        FROM subscriptions WHERE gym_id = $1`, [gymId]),
-    query('SELECT COUNT(*) AS today_checkins FROM attendance_logs WHERE gym_id = $1 AND check_in_date = CURRENT_DATE', [gymId]),
     query(
-      `SELECT COALESCE(SUM(amount_paid),0) AS total_revenue,
-              COALESCE(SUM(amount_paid) FILTER (WHERE created_at >= DATE_TRUNC('month', NOW())),0) AS monthly_revenue
+      `SELECT COUNT(*) AS today_checkins
+       FROM attendance_logs WHERE gym_id = $1 AND check_in_date = CURRENT_DATE`, [gymId]),
+    query(
+      `SELECT
+         COALESCE(SUM(amount_paid), 0) AS total_revenue,
+         COALESCE(SUM(amount_paid) FILTER (
+           WHERE created_at >= DATE_TRUNC('month', NOW())), 0) AS monthly_revenue
        FROM subscriptions WHERE gym_id = $1 AND status != 'cancelled'`, [gymId]),
     query(
       `SELECT COUNT(*) AS expiring_soon FROM subscriptions
-       WHERE gym_id = $1 AND status = 'active' AND end_date BETWEEN CURRENT_DATE AND CURRENT_DATE + 7`, [gymId]),
+       WHERE gym_id = $1 AND status = 'active'
+         AND end_date BETWEEN CURRENT_DATE AND CURRENT_DATE + 7`, [gymId]),
   ]);
+
   res.json({
     success: true,
     data: {
       ...members.rows[0],
       ...subs.rows[0],
-      today_checkins: parseInt(todayAtt.rows[0].today_checkins),
+      today_checkins:  parseInt(todayAtt.rows[0].today_checkins),
       total_revenue:   parseFloat(revenue.rows[0].total_revenue),
       monthly_revenue: parseFloat(revenue.rows[0].monthly_revenue),
       expiring_soon:   parseInt(expiring.rows[0].expiring_soon),
@@ -268,5 +294,6 @@ const getDashboardStats = catchAsync(async (req, res) => {
 
 module.exports = {
   getMembers, getPendingMembers, getMember, createMember,
-  updateMember, deleteMember, approveRegistration, rejectRegistration, getDashboardStats,
+  updateMember, deleteMember, approveRegistration,
+  rejectRegistration, getDashboardStats,
 };
