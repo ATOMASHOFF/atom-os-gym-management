@@ -16,7 +16,7 @@ export default function MyAttendancePage() {
       api.get(`/attendance/member/${user.id}`)
         .then(r => {
           // FIXED: handle both response shapes + silent error removed
-          const data = r.data?.data?.attendance || r.data?.attendance || r.data?.data || [];
+          const data = r.data?.attendance || r.data || [];
           setLogs(Array.isArray(data) ? data : []);
         })
         .catch(err => {

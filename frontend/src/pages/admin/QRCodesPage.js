@@ -16,14 +16,8 @@ export default function QRCodesPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem('atom_token');
-      const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
-      const res = await fetch(`${apiUrl}/gym-qr?_t=${Date.now()}`, {
-        headers: { 'Authorization': `Bearer ${token}`, 'Cache-Control': 'no-cache, no-store', 'Pragma': 'no-cache' }
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      setQrs(data?.data?.qr_codes || data?.qr_codes || []);
+      const r = await api.get('/gym-qr');
+      setQrs(r.data?.qr_codes || []);
     } catch (e) { toast('Failed to load QR codes: ' + e.message, 'error'); }
     finally { setLoading(false); }
   }, [toast]);

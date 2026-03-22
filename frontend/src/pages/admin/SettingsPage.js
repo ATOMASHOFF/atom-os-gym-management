@@ -18,8 +18,7 @@ export default function SettingsPage() {
     api.get('/gyms/current')
       .then(r => {
         // FIXED: handle both {success,data:{...}} and direct object
-        const gymData = r.data?.data || r.data;
-        setGym(gymData);
+        setGym(r.data);
       })
       .catch(() => { toast('Could not load gym settings', 'error'); })
       .finally(() => setLoading(false));

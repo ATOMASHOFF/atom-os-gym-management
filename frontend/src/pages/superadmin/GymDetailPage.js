@@ -91,7 +91,7 @@ export default function GymDetailPage() {
     setLoading(true);
     try {
       const r = await api.get(`/super/gyms/${gymId}`);
-      setData(r.data?.data || r.data);
+      setData(r.data);
     } catch { toast('Failed to load gym', 'error'); navigate('/super/gyms'); }
     finally { setLoading(false); }
   }, [gymId, toast, navigate]);
@@ -102,8 +102,7 @@ export default function GymDetailPage() {
       const r = await api.get(`/super/gyms/${gymId}/members`, {
         params: { search: memberSearch, role: memberRole }
       });
-      const md = r.data?.data || r.data;
-      setMembers(md?.members || []);
+      setMembers(r.data?.members || []);
     } catch { toast('Failed to load members', 'error'); }
     finally { setMembersLoading(false); }
   }, [gymId, memberSearch, memberRole, toast]);

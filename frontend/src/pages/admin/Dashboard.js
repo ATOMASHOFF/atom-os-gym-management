@@ -22,11 +22,10 @@ export default function Dashboard() {
         api.get('/subscriptions?status=active&limit=50'),
       ]);
       // FIXED: handle both {success,data:{...}} and direct object
-      const statsData = s.data?.data || s.data || {};
-      const todayData = t.data?.data?.attendance || t.data?.attendance || [];
-      const subsData  = e.data?.data?.subscriptions || e.data?.subscriptions || [];
-      setStats(statsData);
-      setToday(todayData);
+      // api.js unwraps envelopes automatically
+      setStats(s.data || {});
+      setToday(t.data?.attendance || []);
+      const subsData = e.data?.subscriptions || [];
       setExpiring(subsData.filter(s => {
         const d = fmt.daysLeft(s.end_date);
         return d !== null && d <= 7 && d >= 0;
@@ -56,14 +55,9 @@ export default function Dashboard() {
         title="DASHBOARD"
         subtitle={new Date().toLocaleDateString('en-IN', { dateStyle: 'full' })}
         actions={
-          <div style={{ display: 'flex', gap: 8 }}>
-            <Btn variant="ghost" onClick={load} size="sm" disabled={loading}>
-              <Icon name="refresh" size={13} />{loading ? 'Loading...' : 'Refresh'}
-            </Btn>
-            <Btn onClick={() => window.location.href = '/scanner'} size="sm">
-              <Icon name="qr" size={13} /> Quick Scan
-            </Btn>
-          </div>
+          <Btn variant="ghost" onClick={load} size="sm" disabled={loading}>
+            <Icon name="refresh" size={13} />{loading ? 'Loading...' : 'Refresh'}
+          </Btn>
         }
       />
 

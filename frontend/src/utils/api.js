@@ -11,18 +11,16 @@ const api = axios.create({
 // ── Request interceptor ────────────────────────────────────────
 api.interceptors.request.use(
   (config) => {
-    // Auth token
     const token = localStorage.getItem('atom_token');
     if (token) config.headers['Authorization'] = `Bearer ${token}`;
 
-    // Force no-cache on every request — prevents 304 returning empty stale data
-    config.headers['Cache-Control'] = 'no-cache, no-store';
-    config.headers['Pragma'] = 'no-cache';
-
-    // Add timestamp param to all GET requests — busts Vercel edge cache
+    // Bust cache on every GET request
     if (!config.method || config.method.toLowerCase() === 'get') {
       config.params = { ...(config.params || {}), _t: Date.now() };
     }
+
+    config.headers['Cache-Control'] = 'no-cache, no-store';
+    config.headers['Pragma'] = 'no-cache';
 
     return config;
   },
@@ -30,6 +28,10 @@ api.interceptors.request.use(
 );
 
 // ── Response interceptor ───────────────────────────────────────
+// Unwrap { success: true, data: X } → X
+// Skip unwrap for login (returns { success, token, user })
+const SKIP_UNWRAP = ['/auth/login', '/auth/me'];
+
 const getRedirecting = () => sessionStorage.getItem('__atom_redir') === '1';
 const setRedirecting = () => sessionStorage.setItem('__atom_redir', '1');
 const clearRedirecting = () => sessionStorage.removeItem('__atom_redir');
@@ -37,12 +39,26 @@ const clearRedirecting = () => sessionStorage.removeItem('__atom_redir');
 api.interceptors.response.use(
   (res) => {
     clearRedirecting();
+
+    // Unwrap { success, data } envelope for all non-auth endpoints
+    const url = res.config?.url || '';
+    const skip = SKIP_UNWRAP.some(path => url.includes(path));
+
+    if (
+      !skip &&
+      res.data &&
+      typeof res.data === 'object' &&
+      'success' in res.data &&
+      'data' in res.data
+    ) {
+      res.data = res.data.data;
+    }
+
     return res;
   },
   async (err) => {
     const config = err.config;
 
-    // 401 — token expired or invalid
     if (err.response?.status === 401 && !getRedirecting()) {
       setRedirecting();
       localStorage.removeItem('atom_token');
@@ -50,7 +66,7 @@ api.interceptors.response.use(
       return Promise.reject(err);
     }
 
-    // Retry once on 5xx or network errors (GET only)
+    // Retry once on 5xx or network error (GET only)
     if (
       !config._retried &&
       (!err.response || err.response.status >= 500) &&
@@ -65,26 +81,13 @@ api.interceptors.response.use(
   }
 );
 
-// ─── Helpers ──────────────────────────────────────────────────
-
-// Safely extract gyms array from any response shape
 export const extractGyms = (data) => {
   if (Array.isArray(data)) return data;
   if (Array.isArray(data?.gyms)) return data.gyms;
   if (Array.isArray(data?.data?.gyms)) return data.data.gyms;
-  if (Array.isArray(data?.data)) return data.data;
   return [];
 };
 
-// Safely unwrap { success, data: X } envelope OR return data directly
-export const unwrap = (responseData) => {
-  if (responseData && 'success' in responseData && 'data' in responseData) {
-    return responseData.data;
-  }
-  return responseData;
-};
-
-// Extract error message from any error shape
 export const getErrorMessage = (err, fallback = 'An error occurred') => {
   return (
     err?.response?.data?.message ||

@@ -1,9 +1,3 @@
-# ─────────────────────────────────────────────────────────────
-# ATOM FITNESS — Deploy to Render on merge to main
-# Requires: RENDER_API_KEY secret in GitHub repo settings
-#           RENDER_BACKEND_SERVICE_ID
-#           RENDER_FRONTEND_SERVICE_ID
-# ─────────────────────────────────────────────────────────────
 name: Deploy
 
 on:
@@ -12,40 +6,17 @@ on:
 
 jobs:
   deploy:
-    name: Deploy to Render
+    name: Deploy to Railway
     runs-on: ubuntu-latest
-    needs: []    # Remove this and add [backend, frontend] once CI job is in same file
 
     steps:
-      - name: Trigger backend deploy
-        run: |
-          curl -s -X POST \
-            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
-            -H "Content-Type: application/json" \
-            "https://api.render.com/v1/services/${{ secrets.RENDER_BACKEND_SERVICE_ID }}/deploys" \
-            -d '{"clearCache": false}'
-          echo "✅ Backend deploy triggered"
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Trigger frontend deploy
-        run: |
-          curl -s -X POST \
-            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
-            -H "Content-Type: application/json" \
-            "https://api.render.com/v1/services/${{ secrets.RENDER_FRONTEND_SERVICE_ID }}/deploys" \
-            -d '{"clearCache": false}'
-          echo "✅ Frontend deploy triggered"
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
 
-      - name: Wait for backend health
-        run: |
-          echo "Waiting for backend to be healthy..."
-          for i in $(seq 1 12); do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-              https://atom-fitness-api.onrender.com/health || echo "000")
-            if [ "$STATUS" = "200" ]; then
-              echo "✅ Backend healthy after ${i}0s"
-              exit 0
-            fi
-            echo "Attempt $i/12 — status $STATUS — waiting 10s..."
-            sleep 10
-          done
-          echo "⚠️  Backend health check timed out (may still be starting)"
+      - name: Notify deploy
+        run: echo "✅ Pushed to main — Railway auto-deploys on push"

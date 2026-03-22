@@ -27,7 +27,7 @@ export default function AttendancePage() {
       const memberId = searchParams.get('member_id');
       if (memberId) url += `&member_id=${memberId}`;
       const r = await api.get(url);
-      setLogs((r.data?.data || r.data)?.attendance || []);
+      setLogs(r.data?.attendance || []);
     } catch (e) { toast('Failed to load', 'error'); }
     finally { setLoading(false); }
   }, [dateFrom, dateTo, toast, searchParams]);
@@ -36,7 +36,7 @@ export default function AttendancePage() {
 
   useEffect(() => {
     if (showCheckin) {
-      api.get('/members?role=member').then(r => setMembers((r.data?.data?.members || r.data?.members || []).filter(m => m.status === 'active') || []));
+      api.get('/members?role=member').then(r => setMembers((r.data?.members || []).filter(m => m.status === 'active')));
     }
   }, [showCheckin]);
 

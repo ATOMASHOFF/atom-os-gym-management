@@ -95,38 +95,17 @@ export default function MembersPage() {
     setLoading(true);
     setError('');
     try {
-      const token = localStorage.getItem('atom_token');
-      const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
-      const ts = Date.now();
-
-      const headers = {
-        'Authorization': `Bearer ${token}`,
-        'Cache-Control': 'no-cache, no-store',
-        'Pragma': 'no-cache',
-      };
-
       const searchQ = search ? `&search=${encodeURIComponent(search)}` : '';
       const [mRes, pRes] = await Promise.all([
-        fetch(`${apiUrl}/members?_t=${ts}${searchQ}`, { headers }),
-        isAdmin ? fetch(`${apiUrl}/members/pending?_t=${ts}`, { headers }) : Promise.resolve(null),
+        api.get(`/members?${searchQ}`),
+        isAdmin ? api.get('/members/pending') : Promise.resolve({ data: {} }),
       ]);
 
-      if (!mRes.ok) {
-        const err = await mRes.json().catch(() => ({}));
-        throw new Error(err.message || `HTTP ${mRes.status}`);
-      }
-
-      const mData = await mRes.json();
-      const members = mData?.data?.members || mData?.members || [];
-      const total = mData?.data?.total ?? mData?.total ?? members.length;
-
-      setMembers(members);
-      setTotal(total);
-
-      if (pRes && pRes.ok) {
-        const pData = await pRes.json().catch(() => ({}));
-        setPending(pData?.data?.members || pData?.members || []);
-      }
+      // Backend: { success, data: { members, total, page, limit } }
+      // api.js auto-unwraps {success,data} → r.data = { members, total }
+      setMembers(mRes.data?.members || []);
+      setTotal(mRes.data?.total ?? 0);
+      setPending(pRes.data?.members || []);
     } catch (e) {
       console.error('Members load error:', e);
       setError(e.message || 'Failed to load members');

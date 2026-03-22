@@ -70,14 +70,8 @@ export default function PlansPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem('atom_token');
-      const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
-      const res = await fetch(`${apiUrl}/plans?_t=${Date.now()}`, {
-        headers: { 'Authorization': `Bearer ${token}`, 'Cache-Control': 'no-cache, no-store', 'Pragma': 'no-cache' }
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      setPlans(data?.data?.plans || data?.plans || []);
+      const r = await api.get('/plans');
+      setPlans(r.data?.plans || []);
     } catch (e) { toast('Failed to load plans: ' + e.message, 'error'); }
     finally { setLoading(false); }
   }, [toast]);

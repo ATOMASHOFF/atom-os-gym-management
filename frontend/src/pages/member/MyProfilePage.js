@@ -12,7 +12,7 @@ function MemberQRModal({ open, onClose, user }) {
     if (open && user?.id) {
       setLoading(true);
       api.get(`/scan/member-qr/${user.id}`)
-        .then(r => setQrData(r.data?.data || r.data))
+        .then(r => setQrData(r.data))
         .catch(() => setQrData(null))
         .finally(() => setLoading(false));
     }
@@ -83,7 +83,7 @@ export default function MyProfilePage() {
   useEffect(() => {
     if (user?.id) {
       api.get(`/members/${user.id}`)
-        .then(r => setData(r.data?.data || r.data))
+        .then(r => setData(r.data))
         .catch(() => {})
         .finally(() => setLoading(false));
     }
