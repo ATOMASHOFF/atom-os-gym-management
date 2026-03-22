@@ -121,9 +121,15 @@ export default function StaffPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await api.get('/staff');
-      setStaff((r.data?.data || r.data)?.staff || []);
-    } catch (e) { toast('Failed to load staff', 'error'); }
+      const token = localStorage.getItem('atom_token');
+      const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+      const res = await fetch(`${apiUrl}/staff?_t=${Date.now()}`, {
+        headers: { 'Authorization': `Bearer ${token}`, 'Cache-Control': 'no-cache, no-store', 'Pragma': 'no-cache' }
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setStaff(data?.data?.staff || data?.staff || []);
+    } catch (e) { toast('Failed to load staff: ' + e.message, 'error'); }
     finally { setLoading(false); }
   }, [toast]);
 
