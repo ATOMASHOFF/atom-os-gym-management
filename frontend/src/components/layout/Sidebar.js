@@ -12,9 +12,9 @@ const NAV_SUPER = [
 
 const NAV_ADMIN = [
   { to: '/dashboard',     icon: 'dashboard',     label: 'Dashboard'     },
+  { to: '/scan-member',   icon: 'qr',            label: 'Quick Scan',   tag: 'QR'  },
   { to: '/members',       icon: 'members',       label: 'Members'       },
   { to: '/staff',         icon: 'staff',         label: 'Staff'         },
-  { to: '/scan-member',   icon: 'qr',            label: 'Scan Member',  tag: 'QR'  },
   { to: '/subscriptions', icon: 'subscriptions', label: 'Subscriptions' },
   { to: '/attendance',    icon: 'attendance',    label: 'Attendance'    },
   { to: '/plans',         icon: 'plans',         label: 'Plans'         },

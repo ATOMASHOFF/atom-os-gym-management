@@ -15,8 +15,8 @@ function SubModal({ open, onClose, onSave }) {
   useEffect(() => {
     if (!open) return;
     Promise.all([api.get('/members'), api.get('/plans')]).then(([m, p]) => {
-      setMembers(m.data.members?.filter(x => x.status === 'active' && x.role === 'member') || []);
-      setPlans(p.data.plans?.filter(x => x.is_active) || []);
+      setMembers((m.data?.data?.members || m.data?.members || []).filter(x => x.status === 'active' && x.role === 'member'));
+      setPlans((p.data?.data?.plans || p.data?.plans || []).filter(x => x.is_active));
     });
   }, [open]);
 
@@ -81,7 +81,7 @@ export default function SubscriptionsPage() {
     try {
       const params = tab !== 'all' ? `?status=${tab}` : '';
       const r = await api.get(`/subscriptions${params}`);
-      setSubs(r.data.subscriptions || []);
+      setSubs((r.data?.data || r.data)?.subscriptions || []);
     } catch (e) { toast('Failed to load', 'error'); }
     finally { setLoading(false); }
   }, [tab, toast]);

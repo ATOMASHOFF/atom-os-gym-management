@@ -196,7 +196,22 @@ export default function BulkImportPage() {
   };
 
   const downloadTemplate = () => {
-    window.open('/api/import/template', '_blank');
+    // Generate CSV client-side — no API call needed, works without auth
+    const today = new Date().toISOString().split('T')[0];
+    const next30 = new Date(Date.now() + 30*86400000).toISOString().split('T')[0];
+    const next90 = new Date(Date.now() + 90*86400000).toISOString().split('T')[0];
+    const csv = [
+      'Name,Email,Phone,Plan Name,Start Date,End Date,Amount Paid,Payment Method,Date of Birth,Address,Notes',
+      `Ramesh Kumar,ramesh@example.com,9876543210,Monthly,${today},${next30},800,cash,15-05-1990,Delhi,`,
+      `Priya Sharma,priya@example.com,9876543211,Quarterly,${today},${next90},2100,upi,22-08-1995,Delhi,`,
+    ].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = 'member-import-template.csv';
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+    toast('Template downloaded!', 'success');
   };
 
   /* ── Render ─────────────────────────────────────────────── */

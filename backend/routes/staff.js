@@ -1,11 +1,11 @@
 'use strict';
 const router = require('express').Router();
 const c = require('../controllers/staffController');
-const { authenticate, requireRole } = require('../middleware/auth');
+const { authenticate, requireRole, requirePermission } = require('../middleware/auth');
 const { validate, schemas } = require('../middleware/validate');
 
-router.use(authenticate, requireRole('admin'));
-router.get('/',               c.getStaff);
+router.use(authenticate);
+router.get('/',               requireRole('admin'), requirePermission('can_view_members'), c.getStaff);
 router.post('/',              validate(schemas.createStaff), c.createStaff);
 router.put('/:id/permissions', validate(schemas.idParam), c.updateStaffPermissions);
 router.delete('/:id',         validate(schemas.idParam), c.deleteStaff);

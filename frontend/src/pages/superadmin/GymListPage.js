@@ -95,7 +95,7 @@ export default function GymListPage() {
     setLoading(true);
     try {
       const r = await api.get('/super/gyms', { params: { search } });
-      setGyms(r.data?.data?.gyms || r.data?.gyms || r.data || []);
+      setGyms((r.data?.data || r.data)?.gyms || []);
     } catch { toast('Failed to load gyms', 'error'); }
     finally { setLoading(false); }
   }, [search, toast]);

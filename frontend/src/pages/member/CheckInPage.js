@@ -1,240 +1,175 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
 import api from '../../utils/api';
 import { T, fmt } from '../../utils/helpers';
-import { PageHeader, Card, Btn, Icon, Spinner, Avatar } from '../../components/shared/UI';
-import QRScanner from '../../components/shared/QRScanner';
-import { useToast } from '../../context/ToastContext';
+import { Card, PageHeader, Btn, Icon, Spinner, Badge } from '../../components/shared/UI';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
+import QRScanner from '../../components/shared/QRScanner';
 
-// ── Result screens ────────────────────────────────────────────────────────
-function SuccessScreen({ member, onBack }) {
-  return (
-    <Card style={{ padding: 40, textAlign: 'center', border: `1px solid ${T.green}44` }} className="fadeUp">
-      <div style={{
-        width: 88, height: 88, borderRadius: '50%',
-        background: T.greenDim, border: `3px solid ${T.green}55`,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        margin: '0 auto 20px', animation: 'glow 2s ease 3',
-      }}>
-        <Icon name="check" size={44} color={T.green} />
-      </div>
-      <div style={{ fontFamily: T.display, fontWeight: 900, fontSize: 30, color: T.green, letterSpacing: '0.04em', marginBottom: 4 }}>
-        CHECKED IN!
-      </div>
-      <div style={{ fontFamily: T.display, fontWeight: 700, fontSize: 18, marginBottom: 6 }}>
-        {member?.name}
-      </div>
-      {member?.plan_name && (
-        <div style={{ color: T.sub, fontSize: 13, marginBottom: 4 }}>
-          <span style={{ color: T.accent }}>{member.plan_name}</span> · valid until {fmt.date(member.end_date)}
-        </div>
-      )}
-      <div style={{ fontFamily: T.mono, fontSize: 12, color: T.muted, marginBottom: 28 }}>
-        {new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })} · {new Date().toLocaleDateString('en-IN', { dateStyle: 'medium' })}
-      </div>
-      <div style={{ background: T.bg1, borderRadius: 8, padding: '14px 20px', marginBottom: 24, display: 'inline-block' }}>
-        <div style={{ fontFamily: T.mono, fontSize: 11, color: T.muted, letterSpacing: '0.1em', marginBottom: 4 }}>GYM SESSION STARTED</div>
-        <div style={{ fontFamily: T.display, fontWeight: 800, fontSize: 18, color: T.green }}>Have a great workout! 💪</div>
-      </div>
-      <br />
-      <Btn variant="ghost" onClick={onBack}>← Back</Btn>
-    </Card>
-  );
-}
-
-function AlreadyCheckedIn({ onBack }) {
-  return (
-    <Card style={{ padding: 40, textAlign: 'center', border: `1px solid ${T.amber}44` }} className="fadeUp">
-      <div style={{ width: 80, height: 80, borderRadius: '50%', background: T.amberDim, border: `2px solid ${T.amber}55`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 18px' }}>
-        <Icon name="info_circle" size={40} color={T.amber} />
-      </div>
-      <div style={{ fontFamily: T.display, fontWeight: 900, fontSize: 22, color: T.amber, marginBottom: 8 }}>ALREADY CHECKED IN</div>
-      <div style={{ color: T.sub, lineHeight: 1.7, marginBottom: 28 }}>
-        You've already recorded your visit for today.<br />See you tomorrow! 💪
-      </div>
-      <Btn variant="ghost" onClick={onBack}>← Back</Btn>
-    </Card>
-  );
-}
-
-function ErrorScreen({ message, onBack, onRetry }) {
-  return (
-    <Card style={{ padding: 40, textAlign: 'center', border: `1px solid ${T.red}44` }} className="fadeUp">
-      <div style={{ width: 80, height: 80, borderRadius: '50%', background: T.redDim, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 18px' }}>
-        <Icon name="warning" size={40} color={T.red} />
-      </div>
-      <div style={{ fontFamily: T.display, fontWeight: 900, fontSize: 20, color: T.red, marginBottom: 8 }}>CHECK-IN FAILED</div>
-      <div style={{ color: T.sub, marginBottom: 28, lineHeight: 1.6 }}>{message || 'Unable to process check-in. Please contact gym staff.'}</div>
-      <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
-        <Btn onClick={onRetry}><Icon name="refresh" size={14} /> Try Again</Btn>
-        <Btn variant="ghost" onClick={onBack}>Back</Btn>
-      </div>
-    </Card>
-  );
-}
-
-// ── Main page ─────────────────────────────────────────────────────────────
 export default function CheckInPage() {
-  const [searchParams] = useSearchParams();
-  const urlToken = searchParams.get('token'); // from QR code URL
   const { user } = useAuth();
-  const toast = useToast();
+  const toast    = useToast();
+  const [scanning, setScanning]   = useState(true);  // Start with scanner open
+  const [result, setResult]       = useState(null);
+  const [loading, setLoading]     = useState(false);
+  const [lastCheckin, setLastCheckin] = useState(null);
+  const [myQr, setMyQr]           = useState(null);
+  const [showMyQr, setShowMyQr]   = useState(false);
 
-  const [view, setView] = useState('home'); // home | scanning | loading | success | already | error
-  const [errorMsg, setErrorMsg] = useState('');
-  const [successData, setSuccessData] = useState(null);
-  const [scanActive, setScanActive] = useState(false);
-
-  // If a token is in the URL, process it immediately
+  // Load member's personal QR code
   useEffect(() => {
-    if (urlToken) processGymQR(urlToken);
-  }, [urlToken]);
-
-  const processGymQR = useCallback(async (token) => {
-    setScanActive(false);
-    setView('loading');
-    try {
-      const res = await api.post('/scan/scan-gym', { qr_token: token });
-      setSuccessData(res.data.member);
-      setView('success');
-    } catch (err) {
-      if (err.response?.data?.already_checked_in) {
-        setView('already');
-      } else {
-        setErrorMsg(err.response?.data?.message || 'Check-in failed');
-        setView('error');
-      }
+    if (user?.id) {
+      api.get(`/scan/member-qr/${user.id}`)
+        .then(r => {
+          const d = r.data?.data || r.data;
+          setMyQr(d);
+        })
+        .catch(() => {});
     }
-  }, []);
+  }, [user]);
 
-  const handleManualCheckIn = async () => {
-    setView('loading');
+  const handleScan = async (qrToken) => {
+    if (loading || !qrToken) return;
+    setLoading(true);
+    setScanning(false);
     try {
-      const res = await api.post('/attendance/checkin', { member_id: user.id });
-      setSuccessData({ name: user.name });
-      setView('success');
+      const r = await api.post('/scan/gym-qr', { qr_token: qrToken });
+      const d = r.data?.data || r.data;
+      setResult({ success: true, data: d });
+      setLastCheckin(new Date());
+      toast('✅ Checked in successfully!', 'success');
     } catch (err) {
-      if (err.response?.data?.already_checked_in) {
-        setView('already');
-      } else {
-        setErrorMsg(err.response?.data?.message || 'Check-in failed');
-        setView('error');
-      }
+      const msg = err?.response?.data?.message || 'Check-in failed';
+      setResult({ success: false, message: msg });
+      toast(msg, 'error');
+    } finally {
+      setLoading(false);
     }
   };
 
   const reset = () => {
-    setView('home');
-    setScanActive(false);
-    setSuccessData(null);
-    setErrorMsg('');
-  };
-
-  const startScanning = () => {
-    setView('scanning');
-    setScanActive(true);
+    setResult(null);
+    setScanning(true);
   };
 
   return (
-    <div>
-      <PageHeader title="GYM CHECK-IN" subtitle="Record your visit" />
-      <div style={{ maxWidth: 460, margin: '0 auto' }}>
+    <div style={{ maxWidth: 480, margin: '0 auto' }}>
+      <PageHeader
+        title="CHECK IN"
+        subtitle="Scan your gym's QR code to mark attendance"
+        actions={
+          <Btn variant="ghost" size="sm" onClick={() => setShowMyQr(v => !v)}>
+            <Icon name="qr" size={13} /> My QR
+          </Btn>
+        }
+      />
 
-        {/* Home screen */}
-        {view === 'home' && (
-          <div className="fadeUp" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {/* Welcome card */}
-            <Card style={{ padding: '24px 24px', textAlign: 'center' }}>
-              <div style={{ width: 68, height: 68, borderRadius: '50%', background: T.accentDim, border: `2px solid ${T.accent}44`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
-                <Avatar name={user?.name} size={60} />
-              </div>
-              <div style={{ fontFamily: T.display, fontWeight: 700, fontSize: 16 }}>{user?.name}</div>
-              <div style={{ color: T.muted, fontSize: 12, fontFamily: T.mono, marginTop: 2 }}>
-                {new Date().toLocaleDateString('en-IN', { dateStyle: 'full' })}
-              </div>
-            </Card>
+      {/* ── My personal QR code (for staff to scan) ── */}
+      {showMyQr && myQr && (
+        <Card className="fadeUp" style={{ padding: 24, textAlign: 'center', marginBottom: 20 }}>
+          <div style={{ fontSize: 11, color: T.muted, fontFamily: T.mono, letterSpacing: '0.1em', marginBottom: 12, textTransform: 'uppercase' }}>
+            Your Membership QR — Show to staff
+          </div>
+          <div style={{ background: '#fff', borderRadius: 10, padding: 16, display: 'inline-block', marginBottom: 14 }}>
+            <img src={myQr.qr_image_data} alt="My QR" style={{ width: 200, height: 200, display: 'block' }} />
+          </div>
+          <div style={{ fontWeight: 700, fontSize: 15 }}>{user?.name}</div>
+          <div style={{ fontSize: 11, color: T.muted, fontFamily: T.mono, marginTop: 4 }}>{myQr.qr_token}</div>
+        </Card>
+      )}
 
-            {/* Scan QR */}
-            <Card style={{ padding: 24, cursor: 'pointer', border: `1px solid ${T.border}`, transition: 'border-color 0.15s' }}
-              className="fadeUp-1"
-              onClick={startScanning}
-              onMouseEnter={e => e.currentTarget.style.borderColor = T.accent}
-              onMouseLeave={e => e.currentTarget.style.borderColor = T.border}>
-              <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-                <div style={{ width: 52, height: 52, borderRadius: 10, background: T.accentDim, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, animation: 'glow 3s ease-in-out infinite' }}>
-                  <Icon name="qr" size={26} color={T.accent} />
-                </div>
-                <div>
-                  <div style={{ fontFamily: T.display, fontWeight: 800, fontSize: 17, letterSpacing: '0.02em' }}>SCAN GYM QR CODE</div>
-                  <div style={{ color: T.sub, fontSize: 12, marginTop: 3 }}>Point camera at the QR code near the gym entrance</div>
-                </div>
-                <Icon name="chevron_right" size={20} color={T.muted} style={{ marginLeft: 'auto' }} />
+      {/* ── Result screen ── */}
+      {result && (
+        <Card className="fadeUp" style={{ padding: 32, textAlign: 'center', marginBottom: 20 }}>
+          {result.success ? (
+            <>
+              <div style={{ fontSize: 56, marginBottom: 12 }}>✅</div>
+              <div style={{ fontFamily: T.display, fontWeight: 900, fontSize: 22, color: T.green, marginBottom: 4 }}>
+                CHECKED IN!
               </div>
-            </Card>
-
-            {/* Manual check-in */}
-            <Card style={{ padding: 24, cursor: 'pointer', border: `1px solid ${T.border}`, transition: 'border-color 0.15s' }}
-              className="fadeUp-2"
-              onClick={handleManualCheckIn}
-              onMouseEnter={e => e.currentTarget.style.borderColor = T.blue}
-              onMouseLeave={e => e.currentTarget.style.borderColor = T.border}>
-              <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-                <div style={{ width: 52, height: 52, borderRadius: 10, background: T.blueDim, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <Icon name="checkin" size={26} color={T.blue} />
-                </div>
-                <div>
-                  <div style={{ fontFamily: T.display, fontWeight: 800, fontSize: 17, letterSpacing: '0.02em' }}>MANUAL CHECK-IN</div>
-                  <div style={{ color: T.sub, fontSize: 12, marginTop: 3 }}>Tap to instantly record today's visit</div>
-                </div>
-                <Icon name="chevron_right" size={20} color={T.muted} style={{ marginLeft: 'auto' }} />
+              <div style={{ color: T.sub, fontSize: 13, marginBottom: 8 }}>
+                {fmt.datetime(lastCheckin)}
               </div>
-            </Card>
+              {result.data?.subscription && (
+                <div style={{
+                  background: T.greenDim, border: `1px solid ${T.green}44`,
+                  borderRadius: 6, padding: '10px 16px', margin: '16px 0',
+                  display: 'inline-block',
+                }}>
+                  <div style={{ fontSize: 12, color: T.green }}>
+                    {result.data.subscription.plan_name} · Expires {fmt.date(result.data.subscription.end_date)}
+                  </div>
+                </div>
+              )}
+              <Btn onClick={reset} style={{ marginTop: 16 }}>
+                <Icon name="qr" size={14} /> Scan Again
+              </Btn>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: 48, marginBottom: 12 }}>❌</div>
+              <div style={{ fontFamily: T.display, fontWeight: 700, fontSize: 18, color: T.red, marginBottom: 8 }}>
+                Check-in Failed
+              </div>
+              <div style={{ color: T.sub, fontSize: 13, marginBottom: 16 }}>{result.message}</div>
+              <Btn onClick={reset} variant="ghost">Try Again</Btn>
+            </>
+          )}
+        </Card>
+      )}
 
-            {/* Tip */}
-            <div style={{ padding: '12px 16px', background: T.bg1, borderRadius: 5, border: `1px solid ${T.border}`, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-              <Icon name="info_circle" size={14} color={T.muted} />
-              <span style={{ fontSize: 11, color: T.muted, lineHeight: 1.6 }}>Only one check-in is recorded per day. QR scan is automatic when you scan the gym entrance code.</span>
+      {/* ── QR Scanner — shown first ── */}
+      {scanning && !result && (
+        <Card className="fadeUp" style={{ overflow: 'hidden' }}>
+          <div style={{
+            padding: '14px 20px', borderBottom: `1px solid ${T.border}`,
+            display: 'flex', alignItems: 'center', gap: 8,
+          }}>
+            <Icon name="qr" size={16} color={T.accent} />
+            <div>
+              <div style={{ fontFamily: T.display, fontWeight: 700, fontSize: 14 }}>
+                Scan Gym QR Code
+              </div>
+              <div style={{ fontSize: 11, color: T.sub, marginTop: 1 }}>
+                Point your camera at the QR code posted at the gym entrance
+              </div>
             </div>
           </div>
-        )}
 
-        {/* Scanner screen */}
-        {view === 'scanning' && (
-          <Card style={{ padding: 20 }} className="fadeUp">
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-              <div style={{ fontFamily: T.display, fontWeight: 700, fontSize: 15, letterSpacing: '0.04em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div style={{ width: 8, height: 8, borderRadius: '50%', background: T.green, animation: 'pulse 1.5s infinite' }} />
-                Scanning...
+          <div style={{ padding: 20 }}>
+            {loading ? (
+              <div style={{ padding: 60, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+                <Spinner size={32} />
+                <div style={{ color: T.sub, fontSize: 13 }}>Recording check-in...</div>
               </div>
-              <Btn variant="ghost" size="sm" onClick={reset}><Icon name="close" size={14} /> Cancel</Btn>
-            </div>
+            ) : (
+              <QRScanner
+                onScan={handleScan}
+                style={{ width: '100%', borderRadius: 6, overflow: 'hidden' }}
+              />
+            )}
+          </div>
+        </Card>
+      )}
 
-            <QRScanner
-              active={scanActive}
-              onScan={(token) => processGymQR(token)}
-              onError={(err) => { setErrorMsg(err); setView('error'); }}
-              label="Point camera at the gym QR code"
-            />
-
-            <div style={{ marginTop: 16, padding: '12px 14px', background: T.bg0, borderRadius: 5, border: `1px solid ${T.border}`, fontSize: 12, color: T.sub, textAlign: 'center' }}>
-              Look for the QR code printed near the gym entrance or reception desk
-            </div>
-          </Card>
-        )}
-
-        {/* Loading */}
-        {view === 'loading' && (
-          <Card style={{ padding: 70, textAlign: 'center' }} className="fadeUp">
-            <Spinner size={36} />
-            <div style={{ fontFamily: T.mono, fontSize: 11, color: T.muted, letterSpacing: '0.14em', marginTop: 16 }}>PROCESSING CHECK-IN...</div>
-          </Card>
-        )}
-
-        {view === 'success' && <SuccessScreen member={successData} onBack={reset} />}
-        {view === 'already' && <AlreadyCheckedIn onBack={reset} />}
-        {view === 'error' && <ErrorScreen message={errorMsg} onBack={reset} onRetry={reset} />}
-      </div>
+      {/* ── Instructions ── */}
+      {!result && (
+        <div style={{ marginTop: 16, padding: '14px 20px', background: T.bg2, borderRadius: 6, border: `1px solid ${T.border}` }} className="fadeUp-1">
+          <div style={{ fontSize: 12, color: T.sub, fontFamily: T.mono, letterSpacing: '0.08em', marginBottom: 8, textTransform: 'uppercase' }}>How to check in</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {[
+              'Allow camera access when prompted',
+              'Find the QR code posted at your gym entrance',
+              'Point your camera — check-in is instant',
+            ].map((t, i) => (
+              <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 12, color: T.sub }}>
+                <div style={{ width: 18, height: 18, borderRadius: '50%', background: T.accent, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, flexShrink: 0, marginTop: 1 }}>{i+1}</div>
+                {t}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

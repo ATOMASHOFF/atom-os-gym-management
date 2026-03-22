@@ -30,7 +30,7 @@ function StaffModal({ open, onClose, onSave }) {
   const [perms, setPerms] = useState({});
   const [loading, setLoading] = useState(false);
   const toast = useToast();
-  const f = (k) => (e) => setForm(p => ({ ...p, [k]: e.target.value }));
+  const f = useCallback((k) => (e) => setForm(p => ({ ...p, [k]: e.target.value })), []);
 
   const handle = async (e) => {
     e.preventDefault();
@@ -122,12 +122,15 @@ export default function StaffPage() {
     setLoading(true);
     try {
       const r = await api.get('/staff');
-      setStaff(r.data.staff || []);
+      setStaff((r.data?.data || r.data)?.staff || []);
     } catch (e) { toast('Failed to load staff', 'error'); }
     finally { setLoading(false); }
   }, [toast]);
 
   useEffect(() => { load(); }, [load]);
+
+  const handleCloseStaff = useCallback(() => setShowAdd(false), []);
+  const handleSaveStaff = useCallback(() => { setShowAdd(false); load(); }, [load]);
 
   const handleDelete = async () => {
     try {
@@ -176,7 +179,7 @@ export default function StaffPage() {
         </div>
       )}
 
-      <StaffModal open={showAdd} onClose={() => setShowAdd(false)} onSave={() => { setShowAdd(false); load(); }} />
+      <StaffModal open={showAdd} onClose={handleCloseStaff} onSave={handleSaveStaff} />
       <PermModal open={!!permTarget} onClose={() => setPermTarget(null)} staff={permTarget} onSave={() => { setPermTarget(null); load(); }} />
       <ConfirmDialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={handleDelete} title="REMOVE STAFF" message={`Remove ${deleteTarget?.name} from staff?`} confirmLabel="Remove" danger />
     </div>

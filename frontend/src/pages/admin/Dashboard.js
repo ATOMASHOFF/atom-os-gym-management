@@ -56,9 +56,14 @@ export default function Dashboard() {
         title="DASHBOARD"
         subtitle={new Date().toLocaleDateString('en-IN', { dateStyle: 'full' })}
         actions={
-          <Btn variant="ghost" onClick={load} size="sm" disabled={loading}>
-            <Icon name="refresh" size={13} />{loading ? 'Loading...' : 'Refresh'}
-          </Btn>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Btn variant="ghost" onClick={load} size="sm" disabled={loading}>
+              <Icon name="refresh" size={13} />{loading ? 'Loading...' : 'Refresh'}
+            </Btn>
+            <Btn onClick={() => window.location.href = '/scanner'} size="sm">
+              <Icon name="qr" size={13} /> Quick Scan
+            </Btn>
+          </div>
         }
       />
 

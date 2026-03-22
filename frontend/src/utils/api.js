@@ -4,51 +4,45 @@ const BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
 const api = axios.create({
   baseURL: BASE_URL,
-  timeout: 20000,
+  timeout: 30000,
   headers: { 'Content-Type': 'application/json' },
 });
 
-// ── Request interceptor ───────────────────────────────────────
+// ── Request interceptor ────────────────────────────────────────
 api.interceptors.request.use(
   (config) => {
+    // Auth token
     const token = localStorage.getItem('atom_token');
-    if (token) config.headers.Authorization = `Bearer ${token}`;
+    if (token) config.headers['Authorization'] = `Bearer ${token}`;
 
-    // Bust browser HTTP cache on every GET request
-    // Prevents 304 Not Modified returning stale empty responses
-    if (config.method === 'get' || !config.method) {
-      config.params = { ...config.params, _t: Date.now() };
-    }
-
-    // Tell browser not to cache API responses
-    config.headers['Cache-Control'] = 'no-cache';
+    // Force no-cache on every request — prevents 304 returning empty stale data
+    config.headers['Cache-Control'] = 'no-cache, no-store';
     config.headers['Pragma'] = 'no-cache';
+
+    // Add timestamp param to all GET requests — busts Vercel edge cache
+    if (!config.method || config.method.toLowerCase() === 'get') {
+      config.params = { ...(config.params || {}), _t: Date.now() };
+    }
 
     return config;
   },
   (err) => Promise.reject(err)
 );
 
-// ── Response interceptor ──────────────────────────────────────
-// IMPORTANT: We do NOT auto-unwrap responses here anymore.
-// Each page reads r.data and handles the shape itself.
-// Reason: login returns { success, token, user } — no "data" key.
-// Unwrapping that breaks token extraction in AuthContext.
-
-// FIXED: use sessionStorage so flag resets on hot reload in dev
-const getRedirecting = () => sessionStorage.getItem('__atom_redirecting') === '1';
-const setRedirecting = () => sessionStorage.setItem('__atom_redirecting', '1');
-const clearRedirecting = () => sessionStorage.removeItem('__atom_redirecting');
+// ── Response interceptor ───────────────────────────────────────
+const getRedirecting = () => sessionStorage.getItem('__atom_redir') === '1';
+const setRedirecting = () => sessionStorage.setItem('__atom_redir', '1');
+const clearRedirecting = () => sessionStorage.removeItem('__atom_redir');
 
 api.interceptors.response.use(
   (res) => {
-    clearRedirecting(); // reset on any success
+    clearRedirecting();
     return res;
   },
   async (err) => {
     const config = err.config;
 
-    // 401 — expired or invalid token
+    // 401 — token expired or invalid
     if (err.response?.status === 401 && !getRedirecting()) {
       setRedirecting();
       localStorage.removeItem('atom_token');
@@ -56,15 +50,14 @@ api.interceptors.response.use(
       return Promise.reject(err);
     }
 
-    // Retry once on network errors or 5xx GET requests
-    const shouldRetry =
+    // Retry once on 5xx or network errors (GET only)
+    if (
       !config._retried &&
       (!err.response || err.response.status >= 500) &&
-      config.method?.toLowerCase() === 'get';
-
-    if (shouldRetry) {
+      config.method?.toLowerCase() === 'get'
+    ) {
       config._retried = true;
-      await new Promise(r => setTimeout(r, 800));
+      await new Promise(r => setTimeout(r, 1000));
       return api(config);
     }
 
@@ -72,7 +65,9 @@ api.interceptors.response.use(
   }
 );
 
-// Helper: safely extract gym list from any response shape
+// ─── Helpers ──────────────────────────────────────────────────
+
+// Safely extract gyms array from any response shape
 export const extractGyms = (data) => {
   if (Array.isArray(data)) return data;
   if (Array.isArray(data?.gyms)) return data.gyms;
@@ -81,7 +76,15 @@ export const extractGyms = (data) => {
   return [];
 };
 
-// Helper: extract error message
+// Safely unwrap { success, data: X } envelope OR return data directly
+export const unwrap = (responseData) => {
+  if (responseData && 'success' in responseData && 'data' in responseData) {
+    return responseData.data;
+  }
+  return responseData;
+};
+
+// Extract error message from any error shape
 export const getErrorMessage = (err, fallback = 'An error occurred') => {
   return (
     err?.response?.data?.message ||

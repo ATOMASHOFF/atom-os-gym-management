@@ -17,7 +17,8 @@ function MemberModal({ open, onClose, member, onSave, plans }) {
     setForm(member ? { ...MEMBER_FORM_DEFAULT, ...member, password: '' } : MEMBER_FORM_DEFAULT);
   }, [member, open]);
 
-  const f = (k) => (e) => setForm(p => ({ ...p, [k]: e.target.value }));
+  // useCallback with setForm (stable) prevents new function refs on every render
+  const f = useCallback((k) => (e) => setForm(p => ({ ...p, [k]: e.target.value })), []);
 
   const handle = async (e) => {
     e.preventDefault();
@@ -88,8 +89,8 @@ export default function MembersPage() {
         api.get('/members'),
         isAdmin ? api.get('/members/pending') : Promise.resolve({ data: { members: [] } }),
       ]);
-      setMembers(m.data.members || []);
-      setPending(p.data.members || []);
+      setMembers((m.data?.data || m.data)?.members || []);
+      setPending((p.data?.data || p.data)?.members || []);
     } catch (e) { toast('Failed to load members', 'error'); }
     finally { setLoading(false); }
   }, [isAdmin, toast]);
@@ -99,7 +100,7 @@ export default function MembersPage() {
   const loadDetail = async (id) => {
     try {
       const r = await api.get(`/members/${id}`);
-      setDetailData(r.data);
+      setDetailData(r.data?.data || r.data);
     } catch (e) {}
   };
 
@@ -125,6 +126,9 @@ export default function MembersPage() {
       load();
     } catch (e) { toast('Failed to delete', 'error'); }
   };
+
+  const handleCloseModal = useCallback(() => { setShowAdd(false); setEditMember(null); }, []);
+  const handleSaveMember = useCallback(() => { setShowAdd(false); setEditMember(null); load(); }, [load]);
 
   const list = tab === 'pending' ? pending : members;
   const filtered = list.filter(m =>
@@ -195,7 +199,7 @@ export default function MembersPage() {
       </Card>
 
       {/* Add/Edit modal */}
-      <MemberModal open={showAdd || !!editMember} onClose={() => { setShowAdd(false); setEditMember(null); }} member={editMember} onSave={() => { setShowAdd(false); setEditMember(null); load(); }} />
+      <MemberModal open={showAdd || !!editMember} onClose={handleCloseModal} member={editMember} onSave={handleSaveMember} />
 
       {/* Delete confirm */}
       <ConfirmDialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={handleDelete} title="DELETE MEMBER" message={`Are you sure you want to remove ${deleteTarget?.name}? This action cannot be undone.`} confirmLabel="Delete" danger />

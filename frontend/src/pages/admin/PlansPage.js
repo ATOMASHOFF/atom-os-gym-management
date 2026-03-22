@@ -71,7 +71,7 @@ export default function PlansPage() {
     setLoading(true);
     try {
       const r = await api.get('/plans');
-      setPlans(r.data.plans || []);
+      setPlans((r.data?.data || r.data)?.plans || []);
     } catch (e) { toast('Failed to load plans', 'error'); }
     finally { setLoading(false); }
   }, [toast]);
