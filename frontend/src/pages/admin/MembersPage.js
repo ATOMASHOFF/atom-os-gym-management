@@ -304,7 +304,7 @@ export default function MembersPage() {
         confirmLabel="Remove"
         danger
         onConfirm={handleDelete}
-        onCancel={() => setDeleteTarget(null)}
+        onClose={() => setDeleteTarget(null)}
       />
     </div>
   );

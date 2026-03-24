@@ -6,6 +6,9 @@ const { validate, schemas } = require('../middleware/validate');
 
 router.use(authenticate);
 
+// Self-access — any authenticated member can fetch their own profile
+router.get('/me', c.getMyProfile);
+
 // Admin only
 router.get('/dashboard-stats',  requireRole('admin'),                                        c.getDashboardStats);
 router.get('/pending',          requireRole('admin'),                                        c.getPendingMembers);

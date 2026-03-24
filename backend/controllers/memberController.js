@@ -92,6 +92,48 @@ const getPendingMembers = catchAsync(async (req, res) => {
   res.json({ success: true, data: { members: result.rows } });
 });
 
+// ── GET /api/members/me — self-access for any authenticated user ─────────────
+const getMyProfile = catchAsync(async (req, res) => {
+  const id = req.user.id;
+  const gymId = req.gymId;
+
+  const result = await query(
+    `SELECT m.id, m.name, m.email, m.phone, m.role, m.status, m.member_type,
+            m.member_code, m.date_of_birth, m.address, m.emergency_contact, m.notes,
+            m.created_at, m.qr_token,
+            COALESCE(att.total_checkins, 0) AS total_checkins, att.last_checkin
+     FROM members m
+     LEFT JOIN LATERAL (
+       SELECT COUNT(*) AS total_checkins, MAX(check_in_date) AS last_checkin
+       FROM attendance_logs WHERE member_id = m.id
+     ) att ON true
+     WHERE m.id = $1 AND m.gym_id = $2 AND m.is_active = true`,
+    [id, gymId]
+  );
+  if (!result.rows.length) throw AppError.notFound('Profile not found');
+
+  const member = result.rows[0];
+  const [subs, attendance] = await Promise.all([
+    query(
+      `SELECT s.*, p.name as plan_name, p.duration_days
+       FROM subscriptions s LEFT JOIN membership_plans p ON s.plan_id = p.id
+       WHERE s.member_id = $1 AND s.gym_id = $2 ORDER BY s.created_at DESC LIMIT 10`,
+      [id, gymId]
+    ),
+    query(
+      `SELECT check_in_date, check_in_time, scan_method
+       FROM attendance_logs WHERE member_id = $1 AND gym_id = $2
+       ORDER BY check_in_time DESC LIMIT 30`,
+      [id, gymId]
+    ),
+  ]);
+
+  res.json({
+    success: true,
+    data: { ...member, subscriptions: subs.rows, attendance: attendance.rows },
+  });
+});
+
 // ── GET /api/members/:id ──────────────────────────────────────────────────────
 const getMember = catchAsync(async (req, res) => {
   const { id } = req.params;
@@ -312,7 +354,7 @@ const getDashboardStats = catchAsync(async (req, res) => {
 });
 
 module.exports = {
-  getMembers, getPendingMembers, getMember, createMember,
+  getMembers, getPendingMembers, getMyProfile, getMember, createMember,
   updateMember, deleteMember, approveRegistration,
   rejectRegistration, getDashboardStats,
 };

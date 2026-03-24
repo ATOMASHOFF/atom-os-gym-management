@@ -4,6 +4,19 @@ const { v4: uuidv4 } = require('uuid');
 const { query, audit } = require('../config/database');
 const AppError = require('../utils/AppError');
 const { catchAsync } = require('../middleware/errorHandler');
+const logger = require('../utils/logger');
+
+// Warn on startup if FRONTEND_URL is pointing to localhost in production
+// (this causes QR check-in links to embed localhost URLs that members can't scan)
+if (process.env.NODE_ENV === 'production') {
+  const furl = process.env.FRONTEND_URL || '';
+  if (!furl || furl.includes('localhost') || furl.includes('127.0.0.1')) {
+    logger.warn(
+      '⚠  FRONTEND_URL is not set or points to localhost — generated QR codes will contain unusable check-in links! ' +
+      'Set FRONTEND_URL to your deployed frontend domain (e.g. https://your-app.pages.dev).'
+    );
+  }
+}
 
 const getQRCodes = catchAsync(async (req, res) => {
   const r = await query('SELECT * FROM gym_qr_codes WHERE gym_id=$1 ORDER BY created_at DESC', [req.gymId]);

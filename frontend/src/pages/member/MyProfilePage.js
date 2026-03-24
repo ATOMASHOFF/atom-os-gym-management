@@ -82,7 +82,7 @@ export default function MyProfilePage() {
 
   useEffect(() => {
     if (user?.id) {
-      api.get(`/members/${user.id}`)
+      api.get('/members/me')
         .then(r => setData(r.data))
         .catch(() => {})
         .finally(() => setLoading(false));
