@@ -19,7 +19,8 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 const getQRCodes = catchAsync(async (req, res) => {
-  const r = await query('SELECT * FROM gym_qr_codes WHERE gym_id=$1 ORDER BY created_at DESC', [req.gymId]);
+  const gymId = Number(req.gymId);
+  const r = await query('SELECT * FROM gym_qr_codes WHERE gym_id=$1 ORDER BY created_at DESC', [gymId]);
   res.json({ success: true, data: { qr_codes: r.rows } });
 });
 const generateQRCode = catchAsync(async (req, res) => {

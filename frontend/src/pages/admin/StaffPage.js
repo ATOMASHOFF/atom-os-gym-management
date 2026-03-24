@@ -122,7 +122,8 @@ export default function StaffPage() {
     setLoading(true);
     try {
       const r = await api.get('/staff');
-      setStaff(r.data?.staff || []);
+      const staffList = r.data?.staff || r.data?.data?.staff || (Array.isArray(r.data) ? r.data : []);
+      setStaff(staffList);
     } catch (e) { toast('Failed to load staff: ' + e.message, 'error'); }
     finally { setLoading(false); }
   }, [toast]);

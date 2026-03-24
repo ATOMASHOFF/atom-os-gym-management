@@ -81,7 +81,8 @@ export default function SubscriptionsPage() {
     try {
       const params = tab !== 'all' ? `?status=${tab}` : '';
       const r = await api.get(`/subscriptions${params}`);
-      setSubs(r.data?.subscriptions || []);
+      const subsList = r.data?.subscriptions || r.data?.data?.subscriptions || (Array.isArray(r.data) ? r.data : []);
+      setSubs(subsList);
     } catch (e) { toast('Failed to load', 'error'); }
     finally { setLoading(false); }
   }, [tab, toast]);

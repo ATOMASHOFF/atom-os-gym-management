@@ -45,7 +45,7 @@ const authenticate = async (req, res, next) => {
       if (user.status === 'suspended') return next(AppError.unauthorized('Account suspended — contact your gym'));
       if (user.status === 'inactive')  return next(AppError.unauthorized('Account inactive — contact your gym'));
       req.user = user;
-      req.gymId = user.gym_id;
+      req.gymId = Number(user.gym_id);
       req.isSuperAdmin = false;
     }
     next();

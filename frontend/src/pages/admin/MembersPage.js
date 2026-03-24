@@ -101,11 +101,14 @@ export default function MembersPage() {
         isAdmin ? api.get('/members/pending') : Promise.resolve({ data: {} }),
       ]);
 
-      // Backend: { success, data: { members, total, page, limit } }
-      // api.js auto-unwraps {success,data} → r.data = { members, total }
-      setMembers(mRes.data?.members || []);
-      setTotal(mRes.data?.total ?? 0);
-      setPending(pRes.data?.members || []);
+      // Robust unwrap: check for data.members, data.data.members, or raw array
+      const rawM = mRes.data?.members || mRes.data?.data?.members || (Array.isArray(mRes.data) ? mRes.data : []);
+      const totalCount = mRes.data?.total ?? mRes.data?.data?.total ?? rawM.length;
+      const rawP = pRes.data?.members || pRes.data?.data?.members || (Array.isArray(pRes.data) ? pRes.data : []);
+
+      setMembers(rawM);
+      setTotal(totalCount);
+      setPending(rawP);
     } catch (e) {
       console.error('Members load error:', e);
       setError(e.message || 'Failed to load members');

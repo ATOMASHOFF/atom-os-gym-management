@@ -51,7 +51,15 @@ api.interceptors.response.use(
       'success' in res.data &&
       'data' in res.data
     ) {
+      console.log(`[DEBUG] api unwrap ${url}`, { 
+        original: res.data, 
+        unnested: res.data.data,
+        isMemberArray: Array.isArray(res.data.data?.members),
+        isQRArray: Array.isArray(res.data.data?.qr_codes)
+      });
       res.data = res.data.data;
+    } else {
+      console.log(`[DEBUG] api no-unwrap ${url}`, res.data);
     }
 
     return res;

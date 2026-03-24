@@ -18,10 +18,10 @@ async function generateMemberCode(client) {
   }
 }
 
-// ── GET /api/members ──────────────────────────────────────────────────────────
 const getMembers = catchAsync(async (req, res) => {
-  // Guard: gym_id must be set — super admin needs X-Gym-ID header
-  if (!req.gymId) throw AppError.badRequest('gym_id required — super admin must pass X-Gym-ID header');
+  console.log('[DEBUG] getMembers called. gymId:', req.gymId);
+  const gymId = Number(req.gymId);
+  if (!gymId) throw AppError.badRequest('gym_id required — super admin must pass X-Gym-ID header');
 
   const { role, status, search } = req.query;
   const page   = Math.max(1, parseInt(req.query.page)  || 1);
@@ -29,7 +29,7 @@ const getMembers = catchAsync(async (req, res) => {
   const offset = (page - 1) * limit;
 
   let conditions = ["m.gym_id = $1", "m.status != 'pending'", "m.is_active = true"];
-  const params = [req.gymId];
+  const params = [gymId];
   let p = 2;
 
   if (role)   { conditions.push(`m.role = $${p++}`);   params.push(role); }
@@ -40,6 +40,7 @@ const getMembers = catchAsync(async (req, res) => {
   }
 
   const where = conditions.join(' AND ');
+  console.log('[DEBUG] getMembers query. where:', where, 'params:', params);
 
   const [countResult, dataResult] = await Promise.all([
     query(`SELECT COUNT(*) FROM members m WHERE ${where}`, params),

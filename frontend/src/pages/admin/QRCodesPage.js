@@ -17,7 +17,8 @@ export default function QRCodesPage() {
     setLoading(true);
     try {
       const r = await api.get('/gym-qr');
-      setQrs(r.data?.qr_codes || []);
+      const codes = r.data?.qr_codes || r.data?.data?.qr_codes || (Array.isArray(r.data) ? r.data : []);
+      setQrs(codes);
     } catch (e) { toast('Failed to load QR codes: ' + e.message, 'error'); }
     finally { setLoading(false); }
   }, [toast]);

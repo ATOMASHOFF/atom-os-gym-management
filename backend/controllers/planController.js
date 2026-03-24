@@ -4,7 +4,8 @@ const AppError = require('../utils/AppError');
 const { catchAsync } = require('../middleware/errorHandler');
 
 const getPlans = catchAsync(async (req, res) => {
-  const r = await query(`SELECT p.*, COUNT(s.id) FILTER (WHERE s.status='active') as subscriber_count FROM membership_plans p LEFT JOIN subscriptions s ON p.id=s.plan_id WHERE p.gym_id=$1 GROUP BY p.id ORDER BY p.price ASC`, [req.gymId]);
+  const gymId = Number(req.gymId);
+  const r = await query(`SELECT p.*, COUNT(s.id) FILTER (WHERE s.status='active') as subscriber_count FROM membership_plans p LEFT JOIN subscriptions s ON p.id=s.plan_id WHERE p.gym_id=$1 GROUP BY p.id ORDER BY p.price ASC`, [gymId]);
   res.json({ success: true, data: { plans: r.rows } });
 });
 const createPlan = catchAsync(async (req, res) => {

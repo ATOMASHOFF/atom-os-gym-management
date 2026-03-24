@@ -5,12 +5,13 @@ const AppError = require('../utils/AppError');
 const { catchAsync } = require('../middleware/errorHandler');
 
 const getStaff = catchAsync(async (req, res) => {
+  const gymId = Number(req.gymId);
   const r = await query(`SELECT m.id, m.name, m.email, m.phone, m.status, m.created_at,
     sp.can_scan_attendance, sp.can_view_members, sp.can_add_members, sp.can_edit_members,
     sp.can_delete_members, sp.can_view_subscriptions, sp.can_add_subscriptions,
     sp.can_view_attendance, sp.can_view_reports, sp.can_view_financial
     FROM members m LEFT JOIN staff_permissions sp ON m.id=sp.staff_id AND m.gym_id=sp.gym_id
-    WHERE m.gym_id=$1 AND m.role='staff' AND m.is_active=true ORDER BY m.created_at DESC`, [req.gymId]);
+    WHERE m.gym_id=$1 AND m.role='staff' AND m.is_active=true ORDER BY m.created_at DESC`, [gymId]);
   res.json({ success: true, data: { staff: r.rows } });
 });
 
