@@ -84,7 +84,7 @@ export default function LoginPage() {
       {/* ── Left branding ── */}
       <div className="login-brand" style={{
         flex: '0 0 420px',
-        background: 'linear-gradient(160deg, #0d0f1a 0%, #1a0800 100%)',
+        background: 'linear-gradient(160deg, #0a0a1a 0%, #1a0a2e 100%)',
         borderRight: `1px solid ${T.border}`,
         display: 'flex', flexDirection: 'column',
         justifyContent: 'space-between', padding: '48px 40px',
