@@ -59,12 +59,34 @@ export default function LoginPage() {
       toast(`Welcome back, ${usr.name}!`, 'success');
       navigate('/');
     } catch (err) {
+      // Check if gym selection is required
       if (requiresGymSelection(err)) {
         setNeedGymSelection(true);
         toast('Multiple accounts found with this email. Please select your gym and sign in again.', 'error');
         return;
       }
-      toast(err?.response?.data?.message || err?.message || 'Invalid credentials', 'error');
+      
+      // Handle network errors
+      if (!err.response) {
+        toast('Network error. Please check your connection and try again.', 'error');
+        return;
+      }
+      
+      // Handle API errors
+      const status = err.response?.status;
+      const message = err.response?.data?.message || err.message;
+      
+      if (status === 401) {
+        toast('Invalid email or password. Please try again.', 'error');
+      } else if (status === 403) {
+        toast('Account access denied. Contact your gym administrator.', 'error');
+      } else if (status === 404) {
+        toast('Account not found. Please check your email or contact your gym.', 'error');
+      } else if (status === 429) {
+        toast('Too many login attempts. Please try again in 15 minutes.', 'error');
+      } else {
+        toast(message || 'Login failed. Please try again.', 'error');
+      }
     } finally {
       setLoading(false);
     }
