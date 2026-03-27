@@ -67,6 +67,7 @@ export const AuthProvider = ({ children }) => {
       isAdmin:      user?.role === 'admin',
       isStaff:      user?.role === 'staff',
       isMember:     user?.role === 'member',
+      requiresGymSelection: (err) => err?.response?.data?.code === 'GYM_SELECTION_REQUIRED',
     }}>
       {children}
     </AuthContext.Provider>

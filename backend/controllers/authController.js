@@ -26,6 +26,11 @@ const generateToken = (user, isSuperAdmin = false) => jwt.sign(
 const login = catchAsync(async (req, res) => {
   const { email, password, gym_id } = req.body;
   const ip = req.ip || req.headers['x-forwarded-for'];
+  const normalizedGymId = gym_id ? Number(gym_id) : null;
+
+  if (gym_id !== undefined && (!Number.isInteger(normalizedGymId) || normalizedGymId < 1)) {
+    throw AppError.badRequest('Valid gym_id required');
+  }
 
   // Normalize email the same way validator does — just lowercase + trim
   const normalizedEmail = email.toString().toLowerCase().trim();
@@ -69,9 +74,14 @@ const login = catchAsync(async (req, res) => {
              FROM members m LEFT JOIN gyms g ON m.gym_id = g.id
              WHERE LOWER(TRIM(m.email)) = $1 AND m.is_active = true`;
   const params = [normalizedEmail];
-  if (gym_id) { sql += ' AND m.gym_id = $2'; params.push(gym_id); }
+  if (normalizedGymId) { sql += ' AND m.gym_id = $2'; params.push(normalizedGymId); }
 
   const result = await query(sql, params);
+
+  if (result.rows.length > 1 && !normalizedGymId) {
+    throw AppError.badRequest('Multiple accounts found. Please select your gym and try again.', 'GYM_SELECTION_REQUIRED');
+  }
+
   const user = result.rows[0] || null;
 
   // Always run bcrypt compare — constant time regardless of whether user found

@@ -7,7 +7,7 @@ import { Spinner } from '../components/shared/UI';
 import api, { extractGyms } from '../utils/api';
 
 export default function LoginPage() {
-  const { login, user } = useAuth();
+  const { login, user, requiresGymSelection } = useAuth();
   const toast           = useToast();
   const navigate        = useNavigate();
 
@@ -16,6 +16,7 @@ export default function LoginPage() {
   const [gyms, setGyms]               = useState([]);
   const [gymsLoading, setGymsLoading] = useState(true);
   const [gymsError, setGymsError]     = useState('');
+  const [needGymSelection, setNeedGymSelection] = useState(false);
   const [loading, setLoading]         = useState(false);
   const [focused, setFocused]         = useState(null);
 
@@ -26,8 +27,8 @@ export default function LoginPage() {
       .then(r => {
         const list = extractGyms(r.data);
         setGyms(list);
-        // Always auto-select first gym (Atom OS is always gym #1)
-        if (list.length >= 1) setGymId(String(list[0].id));
+        // Keep login unified: only auto-select if there is exactly one gym
+        if (list.length === 1) setGymId(String(list[0].id));
       })
       .catch(err => {
         setGymsError(err?.response?.data?.message || err?.message || 'Could not load gym list');
@@ -46,14 +47,23 @@ export default function LoginPage() {
     if (!form.email || !form.password) {
       toast('Enter your email and password', 'error'); return;
     }
-    // Super admins don't need a gym — they have no gym_id
-    // For all other users, gym is required
+    if (needGymSelection && gyms.length > 1 && !gymId) {
+      toast('Please select your gym to continue', 'error');
+      return;
+    }
+
     setLoading(true);
     try {
       const usr = await login(form.email, form.password, gymId || undefined);
+      setNeedGymSelection(false);
       toast(`Welcome back, ${usr.name}!`, 'success');
       navigate('/');
     } catch (err) {
+      if (requiresGymSelection(err)) {
+        setNeedGymSelection(true);
+        toast('Multiple accounts found with this email. Please select your gym and sign in again.', 'error');
+        return;
+      }
       toast(err?.response?.data?.message || err?.message || 'Invalid credentials', 'error');
     } finally {
       setLoading(false);
@@ -145,7 +155,7 @@ export default function LoginPage() {
             {/* ── Gym selector ── */}
             <div style={{ marginBottom: 16 }}>
               <label style={{ display: 'block', fontSize: 12, color: T.sub, fontWeight: 500, marginBottom: 6 }}>
-                Gym
+                Gym {needGymSelection ? '(required)' : '(optional)'}
               </label>
 
               {gymsLoading && (
@@ -183,10 +193,11 @@ export default function LoginPage() {
                 </div>
               )}
 
-              {/* Show dropdown only if multiple gyms */}
+              {/* Show dropdown when user must disambiguate or chooses among gyms */}
               {!gymsLoading && !gymsError && gyms.length > 1 && (
                 <select value={gymId} onChange={e => setGymId(e.target.value)}
                   style={{ ...inp('gym'), cursor: 'pointer' }}>
+                  <option value="">— Select gym {needGymSelection ? '(required)' : '(optional)'} —</option>
                   {gyms.map(g => (
                     <option key={g.id} value={String(g.id)}>{g.name}</option>
                   ))}
